@@ -121,7 +121,7 @@ describe('image style is authoritative in the story request body', () => {
   }
 
   it('briefs Luna in each illustrated and meme medium with zero photorealistic default', async () => {
-    for (const id of ['surreal-brainrot', 'cartoon-pop', 'clay-toy-3d', 'retro-pixel']) {
+    for (const id of ['surreal-brainrot', 'cartoon-pop', 'hand-doodle', 'comic-ink', 'paper-collage', 'clay-toy-3d', 'retro-pixel']) {
       const style = styleById(id)
       const sys = await sentSystemPrompt(id)
       expect(sys, id).toContain(style.directive.medium)

@@ -12,7 +12,7 @@ describe('TikTok-native image style taxonomy', () => {
   it('offers every required TikTok-native style plus capture styles and Custom', () => {
     expect(IMAGE_STYLES.map((style) => style.name)).toEqual([
       'Creator Candid', 'Direct Flash', 'Cinematic',
-      'Cartoon Pop', 'Clay & Toy 3D', 'Retro Pixel',
+      'Flat 2D Cartoon', 'Hand-Drawn Doodle', 'Comic Ink & Halftone', 'Cut-Paper Collage', 'Clay & Toy 3D', 'Retro Pixel Art',
       'Surreal Brainrot', 'Deep-Fried Meme', 'Cursed Collage', 'Y2K Web Chaos',
       'Custom',
     ])
@@ -26,7 +26,7 @@ describe('TikTok-native image style taxonomy', () => {
     for (const style of IMAGE_STYLES) expect(groupIds, style.id).toContain(style.group)
 
     expect(stylesInGroup('capture').map((style) => style.id)).toEqual(['creator-candid', 'direct-flash', 'cinematic'])
-    expect(stylesInGroup('illustrated').map((style) => style.id)).toEqual(['cartoon-pop', 'clay-toy-3d', 'retro-pixel'])
+    expect(stylesInGroup('illustrated').map((style) => style.id)).toEqual(['cartoon-pop', 'hand-doodle', 'comic-ink', 'paper-collage', 'clay-toy-3d', 'retro-pixel'])
     expect(stylesInGroup('meme').map((style) => style.id)).toEqual(['surreal-brainrot', 'deep-fried', 'cursed-collage', 'y2k-web-chaos'])
     expect(stylesInGroup('custom').map((style) => style.id)).toEqual(['custom'])
     // Meme-native + illustrated must outweigh capture: the selector cannot be photography-heavy again.
@@ -81,14 +81,70 @@ describe('TikTok-native image style taxonomy', () => {
     expect(styleDirective(byId('surreal-brainrot'))).toMatch(/played completely straight/i)
   })
 
-  it('makes Cartoon Pop unmistakably 2D illustrated and hostile to photorealism', () => {
+  it('makes Flat 2D Cartoon unmistakably flat cel animation and hostile to photorealism', () => {
     const cartoon = byId('cartoon-pop').directive
     expect(cartoon.medium).toMatch(/2D/)
-    expect(cartoon.medium).toMatch(/cartoon|illustration/i)
+    expect(cartoon.medium).toMatch(/cel-animation|cartoon/i)
     expect(cartoon.medium).toMatch(/never a photograph/i)
+    expect(cartoon.medium).toMatch(/never a 3D render/i)
     expect(cartoon.subject).toMatch(/outline/i)
     expect(cartoon.negative).toMatch(/no photographic elements/i)
-    expect(cartoon.negative).toMatch(/no 3D rendering/i)
+    expect(cartoon.negative).toMatch(/no 3D/i)
+  })
+
+  // The direct user correction this taxonomy answers: "cartoonish" outputs all
+  // converged on one glossy 3D look. Seven cartoon families must be genuinely
+  // different rendering media, and every flat medium must ban the vocabulary
+  // that drags image models back to 3D/CGI/photo territory.
+  describe('cartoon families are distinct rendering media', () => {
+    const FAMILY_MEDIUM_TOKENS = {
+      'cartoon-pop': /flat 2D cel-animation/i,
+      'hand-doodle': /hand-drawn doodle.*marker and ballpoint/i,
+      'comic-ink': /comic-book panel.*ink and halftone/i,
+      'paper-collage': /cut-paper and sticker collage/i,
+      'retro-pixel': /low-resolution pixel art/i,
+      'clay-toy-3d': /stop-motion-style 3D.*clay/i,
+      'surreal-brainrot': /3D-render-style/i,
+    }
+    const FLAT_FAMILY_IDS = ['cartoon-pop', 'hand-doodle', 'comic-ink', 'paper-collage', 'retro-pixel']
+    const BANNED_IN_FLAT_MEDIA = [/\b3D\b/, /CGI/i, /clay/i, /plastic/i, /photoreal/i, /camera/i, /lens/i]
+
+    it('covers all seven required families with pairwise-distinct medium definitions', () => {
+      const mediums = Object.keys(FAMILY_MEDIUM_TOKENS).map((id) => byId(id).directive.medium)
+      expect(new Set(mediums).size).toBe(7)
+      for (const [id, token] of Object.entries(FAMILY_MEDIUM_TOKENS)) {
+        expect(byId(id).directive.medium, id).toMatch(token)
+      }
+    })
+
+    it('gives every flat 2D family explicit bans on 3D, CGI, clay, plastic, photorealism, camera, and lens language', () => {
+      for (const id of FLAT_FAMILY_IDS) {
+        const negative = byId(id).directive.negative
+        for (const banned of BANNED_IN_FLAT_MEDIA) {
+          expect(negative, `${id} must forbid ${banned}`).toMatch(banned)
+        }
+      }
+    })
+
+    it('names the medium in every selector name or tagline so users understand it before generating', () => {
+      expect(byId('cartoon-pop').name).toMatch(/flat 2d/i)
+      expect(byId('hand-doodle').name).toMatch(/hand-drawn|doodle/i)
+      expect(byId('comic-ink').name).toMatch(/comic/i)
+      expect(byId('paper-collage').name).toMatch(/paper/i)
+      expect(byId('retro-pixel').name).toMatch(/pixel/i)
+      expect(byId('clay-toy-3d').name).toMatch(/clay.*3d/i)
+      for (const id of FLAT_FAMILY_IDS) {
+        expect(byId(id).tagline, id).toMatch(/never 3D/i)
+      }
+      expect(byId('clay-toy-3d').tagline).toMatch(/deliberately 3D/i)
+    })
+
+    it('keeps only the clay preset three-dimensional among the illustrated group', () => {
+      for (const style of stylesInGroup('illustrated')) {
+        if (style.id === 'clay-toy-3d') continue
+        expect(style.directive.negative, style.id).toMatch(/no 3D/i)
+      }
+    })
   })
 
   it('gives each remaining meme and transformation style its defining mechanics', () => {

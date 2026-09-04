@@ -20,11 +20,14 @@ A separate control from the slide design presets: `src/lib/imageStyles.js` defin
 - **Direct Flash** — hard on-camera flash, inky falloff, glossy late-night snapshot punch.
 - **Cinematic** — film-still drama: anamorphic depth, haze, teal-and-amber grade.
 
-**Illustration & transformation** — the frame is rebuilt in a non-photographic medium:
+**Illustration & transformation** — each preset is a different rendering medium; the five flat media carry explicit prompt bans on 3D, CGI, clay, plastic, photorealism, camera, and lens language so "cartoonish" output can no longer converge on one glossy 3D look:
 
-- **Cartoon Pop** — unmistakably flat 2D cartoon illustration: thick outlines, cel shading, candy color, zero photorealism.
-- **Clay & Toy 3D** — handmade miniature world: clay figures with fingerprints, toy diorama sets, soft macro depth.
-- **Retro Pixel** — chunky game-screen pixel art on a strict grid: dithered shading, sprite drama, no anti-aliasing.
+- **Flat 2D Cartoon** — flat cel-animation drawing: thick outlines, flat unbroken color fills, candy palette. Drawn, never 3D.
+- **Hand-Drawn Doodle** — marker-and-ballpoint scribbles on paper: wobbly lines, scribble fills, notebook energy. Sketched, never 3D.
+- **Comic Ink & Halftone** — pulp comic-book printing: brush ink, Ben-Day dots, speed lines, newsprint. Printed, never 3D.
+- **Cut-Paper Collage** — construction-paper cutouts and stickers: scissor edges, glued flat layers, googly-eye stickers. Paper, never 3D.
+- **Retro Pixel Art** — chunky game-screen pixel art on a strict grid: dithered shading, sprite drama, no anti-aliasing. Pixels, never 3D.
+- **Clay & Toy 3D** — the deliberately three-dimensional preset: stop-motion clay figures with fingerprints, toy diorama sets, soft macro depth.
 
 **Meme-native** — internet-born aesthetics where the artifacts are the style:
 
@@ -37,13 +40,17 @@ A separate control from the slide design presets: `src/lib/imageStyles.js` defin
 
 - **Custom** — an editable style direction written verbatim into every prompt.
 
-The selected style is embedded in the per-series visual bible and every `meta/muse-image` prompt (style-specific negative constraints included — only lettering is universally banned, because the approved text is composited locally), recorded on each generated frame, persisted in the exported Markdown manifest (`## Image style`), and enforced by the staleness check: switching styles after generating marks frames stale until they are regenerated to match.
+The selected style owns the full final `meta/muse-image` prompt: the payload opens with the style directive via the per-series visual bible, every other wrapper line is medium-neutral logistics, and the payload closes with the style's own hard negative constraints repeated verbatim (only lettering is universally banned, because the approved text is composited locally). The style is recorded on each generated frame, persisted in the exported Markdown manifest (`## Image style`), and enforced by the staleness check: switching styles after generating marks frames stale until they are regenerated to match.
+
+### Parallel image generation
+
+Frames are independent requests, so they are generated through a bounded concurrency pool (`src/lib/concurrency.js`, cap of 3 in `src/lib/imageApi.js` — sized for a single-user OpenRouter key) instead of one at a time. `planImagePrompts` freezes every frame's exact provider prompt up front; `generateSlideImages` dispatches each plan exactly once, preserves slide order in its results regardless of completion order, records failures per frame instead of stopping at the first one, and honors an `AbortSignal` (a Cancel button aborts in-flight requests and never dispatches the rest). Re-running generation skips frames whose stored raw image already came from an identical prompt — copy edits recompose locally without new image credits — and re-rolls everything only when every frame is already current. With mocked 40 ms frames the pool finishes a 5-slide set about 2.5× faster than the serial baseline (see `concurrency.test.js` / `imageApi.test.js` timing tests).
 - **Model-driven art direction**: the text model returns `layout`, `emphasis`, and `focalPoint` per slide through the response schema; the app validates the metadata (clamping focal points, verifying the emphasis appears in the copy, falling back to role-derived layouts) and renders it deterministically — same input, same pixels.
 - **Mobile safety**: all copy is fitted inside a TikTok-safe region (top search bar, bottom caption/sound area, and the right action rail are avoided); copy that cannot stay readable is rejected rather than shrunk or clipped.
 
 ### Visual proof
 
-`contact-sheet.html` (built alongside the app) renders a full generated sequence through the production pipeline over deterministic placeholder photography — one contact sheet per preset plus full-resolution detail frames. `style-contact-sheet.html` renders one deterministic mock base frame per image style (painted in that style's medium, palette, texture, and composition mechanics) through the same production compositor, plus full-size detail frames for Cartoon Pop, Surreal Brainrot, Deep-Fried Meme, and Cursed Collage annotated with the exact prompt directive each injects. Capture them with:
+`contact-sheet.html` (built alongside the app) renders a full generated sequence through the production pipeline over deterministic placeholder photography — one contact sheet per preset plus full-resolution detail frames. `style-contact-sheet.html` renders one deterministic mock base frame per image style (painted in that style's medium, palette, texture, and composition mechanics) through the same production compositor, plus full-size detail frames for all seven cartoon families (Flat 2D Cartoon, Hand-Drawn Doodle, Comic Ink & Halftone, Cut-Paper Collage, Retro Pixel Art, Clay & Toy 3D, Surreal Brainrot) annotated with the exact prompt directive each injects. These tiles are deterministic mocks that demonstrate the intended medium separation and the production compositing path — they are not model output and say nothing about real model quality. Capture them with:
 
 ```bash
 npm run build
@@ -86,7 +93,7 @@ npm run build
 
 Text generation uses OpenRouter's `POST /api/v1/chat/completions` endpoint and requests schema-constrained hooks, a selected hook, exact frame count, visual directions, and caption. The text-model field is editable and defaults to `openai/gpt-5.6-luna`.
 
-Image generation sends each frame's visual direction plus story context and the selected image-style directive to OpenRouter's `POST /api/v1/images` endpoint. The default image model is `meta/muse-image`. The model is explicitly told not to draw typography. The browser then crops the returned image to 9:16 biased toward the slide's declared focal point, and renders the approved copy through the slide's planned composition archetype and the active design preset. Editing the copy, the visual, the design preset, or the image style invalidates that frame's render so stale imagery cannot be exported as current; text and design-preset edits re-render locally from the stored raw image without a new API call, while an image-style change requires regeneration.
+Image generation sends each frame's visual direction plus story context and the selected image-style directive to OpenRouter's `POST /api/v1/images` endpoint, with up to 3 frames in flight at once and per-frame failure reporting. The default image model is `meta/muse-image`. The model is explicitly told not to draw typography. The browser then crops the returned image to 9:16 biased toward the slide's declared focal point, and renders the approved copy through the slide's planned composition archetype and the active design preset. Editing the copy, the visual, the design preset, or the image style invalidates that frame's render so stale imagery cannot be exported as current; text and design-preset edits re-render locally from the stored raw image without a new API call, while an image-style change requires regeneration.
 
 The API key is held only in React state for the current tab. It is not written to local storage, bundled into the app, or included in exports. For a public deployment, replace browser-side credentials with a small authenticated server endpoint.
 

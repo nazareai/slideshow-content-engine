@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import * as Tabs from '@radix-ui/react-tabs'
 import JSZip from 'jszip'
 import { Check, Clipboard, Download, Grid3x3, Lightbulb, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { cn } from './lib/cn'
 import { ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, toMarkdown } from './lib/engine'
-import { buildImagePrompt, buildVisualBible, DEFAULT_IMAGE_MODEL, generateImage } from './lib/imageApi'
+import { DEFAULT_IMAGE_MODEL, generateSlideImages, IMAGE_GENERATION_CONCURRENCY, planImagePrompts } from './lib/imageApi'
 import { composeContactSheet, composeSlideDataUrl, loadImage } from './lib/compositor'
 import { DEFAULT_PRESET_ID, getPreset, STYLE_PRESETS } from './lib/artDirection'
 import { CUSTOM_STYLE_PLACEHOLDER, DEFAULT_IMAGE_STYLE_ID, getImageStyle, IMAGE_STYLE_GROUPS, resolveImageStyle, stylesInGroup } from './lib/imageStyles'
@@ -53,7 +53,7 @@ function App() {
   const [customStyleText, setCustomStyleText] = useState('')
   const [images, setImages] = useState({})
   const [reviewedSlides, setReviewedSlides] = useState({})
-  const [generationReceipt, setGenerationReceipt] = useState(null)
+  const imageAbortRef = useRef(null)
   const imageStyle = useMemo(() => resolveImageStyle({ styleId: imageStyleId, customText: customStyleText }), [imageStyleId, customStyleText])
   const briefKey = JSON.stringify({ topic, audience, angle, observation, source, slideCount })
   const [generatedBriefKey, setGeneratedBriefKey] = useState(briefKey)
@@ -66,7 +66,6 @@ function App() {
     setGeneratedBriefKey(briefKey)
     setImages({})
     setReviewedSlides({})
-    setGenerationReceipt(null)
     setNotice('Local structure regenerated. Use AI story for model-written hooks, slides, and caption.')
   }
 
@@ -84,14 +83,6 @@ function App() {
       setCaption(story.caption)
       setImages({})
       setReviewedSlides({})
-      setGenerationReceipt({
-        selectedStyle: imageStyle.name,
-        styleId: imageStyle.id,
-        textModel,
-        lunaDirections: story.slides.map((slide) => ({ id: slide.id, role: slide.role, visual: slide.visual })),
-        museRequests: [],
-        completedSlides: 0,
-      })
       setGeneratedBriefKey(JSON.stringify({ topic, audience, angle: story.selectedHook, observation, source, slideCount }))
       setNotice(`Story generated with ${textModel}. Best hook selected from ${story.hooks.length} candidates. Review it, then generate composed images.`)
     } catch (error) {
@@ -160,12 +151,30 @@ function App() {
   function changeImageStyle(styleId) {
     if (styleId === imageStyleId) return
     setImageStyleId(styleId)
-    setGenerationReceipt(null)
     const hasFrames = slides.some((slide) => images[slide.id]?.dataUrl)
     const name = getImageStyle(styleId).name
     setNotice(hasFrames
       ? `Image style set to ${name}. Existing frames and visual directions keep the previous style — regenerate the AI story and images to apply it. Export stays blocked until every frame matches the selected style.`
       : `Image style set to ${name}. It will shape the story's visual directions and every image prompt when you generate.`)
+  }
+
+  // Store one finished frame (raw provider result + locally composed overlay)
+  // via a functional update: parallel frames land in any order and must never
+  // clobber each other through a stale closure.
+  function storeFrame(slideId, slide, frame, composed) {
+    setImages((current) => {
+      const previous = current[slideId]
+      if (previous?.composedUrl) URL.revokeObjectURL(previous.composedUrl)
+      return {
+        ...current,
+        [slideId]: {
+          ...(frame ? { dataUrl: frame.dataUrl, mediaType: frame.mediaType, cost: frame.cost, prompt: frame.prompt } : previous),
+          renderedStyleId: imageStyle.id, renderedStyleDirective: imageStyle.directive,
+          composedBlob: composed.blob, composedUrl: composed.dataUrl,
+          renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: stylePreset, renderedLayout: slide.direction?.layout,
+        },
+      }
+    })
   }
 
   async function generateImages() {
@@ -174,43 +183,60 @@ function App() {
       return
     }
     setGeneratingImages(true)
-    setNotice(`Generating real images one frame at a time in the ${imageStyle.name} style…`)
+    setReviewedSlides({})
+    const controller = new AbortController()
+    imageAbortRef.current = controller
+    const startedAt = performance.now()
     try {
-      const next = { ...images }
-      const failed = []
-      setReviewedSlides({})
-      const visualBible = buildVisualBible({ topic, title: angle, audience }, imageStyle)
-      for (const [index, slide] of slides.entries()) {
-        try {
-          const prompt = buildImagePrompt(slide, { topic, title: angle, audience }, visualBible, imageStyle)
-          const result = await generateImage({ apiKey, prompt, model: imageModel })
-          const composed = await composeSlideDataUrl({ imageDataUrl: result.dataUrl, slide, direction: slide.direction, preset: stylePreset, index, total: slides.length })
-          if (next[slide.id]?.composedUrl) URL.revokeObjectURL(next[slide.id].composedUrl)
-          next[slide.id] = { ...result, prompt, renderedStyleId: imageStyle.id, renderedStyleDirective: imageStyle.directive, composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: stylePreset, renderedLayout: slide.direction?.layout }
-          setImages({ ...next })
-          setGenerationReceipt((current) => ({
-            selectedStyle: imageStyle.name,
-            styleId: imageStyle.id,
-            textModel,
-            lunaDirections: current?.lunaDirections || slides.map((entry) => ({ id: entry.id, role: entry.role, visual: entry.visual })),
-            museRequests: [
-              ...(current?.museRequests || []).filter((entry) => entry.id !== slide.id),
-              { id: slide.id, model: imageModel, prompt },
-            ],
-            completedSlides: Object.values(next).filter((entry) => entry?.composedUrl).length,
-          }))
-        } catch (error) {
-          failed.push(slide.id)
-          break
-        }
+      // Every frame's exact provider prompt is planned up front. Frames whose
+      // stored raw image already came from the identical prompt are reused
+      // (recomposed locally if the overlay is stale) instead of re-billed;
+      // if every frame is current, the click is an explicit full re-roll.
+      const plans = planImagePrompts({ slides, project: { topic, title: angle, audience }, styleSelection: imageStyle })
+      const isCurrentRaw = (plan) => Boolean(images[plan.slideId]?.dataUrl && images[plan.slideId].prompt === plan.prompt)
+      const allCurrent = plans.every(isCurrentRaw)
+      const targets = allCurrent ? plans : plans.filter((plan) => !isCurrentRaw(plan))
+      const reused = allCurrent ? [] : plans.filter(isCurrentRaw)
+      setNotice(`Generating ${targets.length} of ${slides.length} frames in parallel (up to ${IMAGE_GENERATION_CONCURRENCY} at once) in the ${imageStyle.name} style…${reused.length ? ` ${reused.length} unchanged ${reused.length === 1 ? 'frame is' : 'frames are'} reused without new image credits.` : ''}`)
+
+      for (const plan of reused) {
+        const slide = slides[plan.index]
+        if (isRenderCurrent(slide, images[plan.slideId], stylePreset, imageStyle.directive)) continue
+        const composed = await composeSlideDataUrl({ imageDataUrl: images[plan.slideId].dataUrl, slide, direction: slide.direction, preset: stylePreset, index: plan.index, total: slides.length })
+        storeFrame(plan.slideId, slide, null, composed)
       }
-      if (failed.length) setNotice(`Generation stopped at slide ${failed[0]}. Completed slides were preserved. Retry to finish the missing frames; export remains blocked.`)
-      else setNotice(`${slides.length} finished slides generated in the ${imageStyle.name} image style. Review and approve every frame before export.`)
+
+      const results = await generateSlideImages({
+        plans: targets, apiKey, model: imageModel, signal: controller.signal,
+        onFrame: async (frame) => {
+          const slide = slides[frame.index]
+          const composed = await composeSlideDataUrl({ imageDataUrl: frame.dataUrl, slide, direction: slide.direction, preset: stylePreset, index: frame.index, total: slides.length })
+          storeFrame(frame.slideId, slide, frame, composed)
+        },
+      })
+
+      const finished = results.filter((result) => result.status === 'fulfilled')
+      const failed = results.filter((result) => result.status === 'rejected')
+      const cancelled = results.filter((result) => result.status === 'cancelled')
+      const seconds = ((performance.now() - startedAt) / 1000).toFixed(1)
+      if (cancelled.length) {
+        setNotice(`Image generation cancelled. ${finished.length} finished ${finished.length === 1 ? 'frame was' : 'frames were'} kept; ${cancelled.length} ${cancelled.length === 1 ? 'frame was' : 'frames were'} stopped without billing (slides ${cancelled.map((entry) => entry.slideId).join(', ')}). Generate again to finish only the missing frames.`)
+      } else if (failed.length) {
+        const firstReason = failed[0].reason?.message || 'Unknown error'
+        setNotice(`${failed.length} of ${results.length} frames failed — slide${failed.length === 1 ? '' : 's'} ${failed.map((entry) => entry.slideId).join(', ')} (first error: ${firstReason}). ${finished.length} completed ${finished.length === 1 ? 'frame was' : 'frames were'} kept. Generate again to retry only the failed frames; export stays blocked until every frame is finished.`)
+      } else {
+        setNotice(`${slides.length} finished slides ready in the ${imageStyle.name} image style — ${targets.length} generated in parallel in ${seconds}s${reused.length ? `, ${reused.length} reused` : ''}. Review and approve every frame before export.`)
+      }
     } catch (error) {
       setNotice(error.message || 'Image generation failed. Previously generated frames were kept.')
     } finally {
+      imageAbortRef.current = null
       setGeneratingImages(false)
     }
+  }
+
+  function cancelImageGeneration() {
+    imageAbortRef.current?.abort()
   }
 
   function saveBlob(content, name, type) {
@@ -348,8 +374,11 @@ function App() {
                       <textarea id="custom-style" className="field min-h-24 resize-y font-normal" value={customStyleText} onChange={(event) => setCustomStyleText(event.target.value)} placeholder={CUSTOM_STYLE_PLACEHOLDER} disabled={generatingImages} />
                     </div>
                   )}
-                  <Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="mt-4 w-full">{generatingImages ? 'Generating + composing…' : `Generate finished slides: image + text (${imageStyle.name})`}</Button>
-                  <p className="mt-3 text-xs text-black/55">Each style rewrites the medium, subject grammar, scene, composition, texture, palette, and negative constraints of the prompt while preserving 9:16 framing and text-safe negative space. Switching styles after generating marks frames stale until they are regenerated.</p>
+                  <div className="mt-4 flex gap-2">
+                    <Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="flex-1">{generatingImages ? `Generating up to ${IMAGE_GENERATION_CONCURRENCY} frames at once…` : `Generate finished slides: image + text (${imageStyle.name})`}</Button>
+                    {generatingImages && <Button variant="secondary" onClick={cancelImageGeneration}>Cancel</Button>}
+                  </div>
+                  <p className="mt-3 text-xs text-black/55">Each style owns the full final image prompt — medium, subject grammar, scene, composition, texture, palette, and hard negative constraints — while preserving 9:16 framing and text-safe negative space. Frames are generated in parallel (up to {IMAGE_GENERATION_CONCURRENCY} at once), each frame's failure is reported individually, and frames whose prompt has not changed are reused without spending new image credits. Switching styles after generating marks frames stale until they are regenerated.</p>
                 </div>
                 <div className="mb-5 rounded-xl border border-black/10 bg-white p-4">
                   <div className="mb-3 flex items-center justify-between gap-3"><span className="label mb-0">Slide design preset</span><Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={() => recomposeOverlays()} disabled={generatingImages || generatingText || !slides.some((slide) => images[slide.id]?.dataUrl)}>Re-render overlays</Button></div>
@@ -364,18 +393,6 @@ function App() {
                   </div>
                   <p className="mt-3 text-xs text-black/55">Design presets change the text overlay: typography, composition, and texture per narrative role — independent of the image generation style above. Switching re-renders existing frames locally without spending image credits. Each slide gets one of seven compositions (impact stack, editorial split, evidence card, tension rail, spotlight reveal, takeaway ledger, CTA stamp) chosen from its narrative job, with no layout repeated back-to-back.</p>
                 </div>
-                {generationReceipt && (
-                  <section aria-label="Generation receipt" className="mb-5 rounded-xl border border-cobalt/25 bg-cobalt/5 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div><p className="label mb-0 text-cobalt">Runtime generation receipt</p><h3 className="text-lg font-bold">{generationReceipt.selectedStyle} propagated end to end</h3></div>
-                      <span className="rounded-md bg-white px-2 py-1 text-xs font-bold">{generationReceipt.completedSlides}/{slides.length} composed</span>
-                    </div>
-                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                      <div className="rounded-lg bg-white p-3"><p className="text-xs font-bold uppercase tracking-wide text-black/45">Luna visual direction</p><p className="mt-1 text-sm leading-6">{generationReceipt.lunaDirections[0]?.visual}</p></div>
-                      <div className="rounded-lg bg-white p-3"><p className="text-xs font-bold uppercase tracking-wide text-black/45">Exact Muse payload · {generationReceipt.museRequests[0]?.model || imageModel}</p><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs leading-5">{generationReceipt.museRequests[0]?.prompt || 'Generate images to capture the downstream payload.'}</pre></div>
-                    </div>
-                  </section>
-                )}
                 <div className="grid gap-4 md:grid-cols-2">
                   {slides.map((slide) => <article key={slide.id} className="panel overflow-hidden">
                     <div className="flex items-center justify-between gap-2 border-b border-black/10 px-4 py-3"><span className="flex min-w-0 items-center gap-2 text-sm font-bold tabular-nums">{String(slide.id).padStart(2,'0')} · {slide.role}{slide.direction?.layout && <span className="truncate rounded bg-black/5 px-1.5 py-0.5 text-[11px] font-semibold text-black/60">{slide.direction.layout}{slide.direction.mirror ? ' ⇋' : ''}</span>}</span><span className="shrink-0 text-xs text-black/45">{images[slide.id]?.composedUrl ? 'TEXT ON IMAGE' : `${slide.text.length}/110`}</span></div>

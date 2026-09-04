@@ -8,7 +8,9 @@ import { composeContactSheet, composeSlide, loadImage } from './lib/compositor'
 import { makeSlides } from './lib/engine'
 import { IMAGE_STYLES, styleDirective } from './lib/imageStyles'
 
-const DETAIL_STYLE_IDS = ['cartoon-pop', 'surreal-brainrot', 'deep-fried', 'cursed-collage']
+// The seven cartoon families get detail frames: the whole point of the
+// redesign is that their rendering media must be visibly different.
+const DETAIL_STYLE_IDS = ['cartoon-pop', 'hand-doodle', 'comic-ink', 'paper-collage', 'retro-pixel', 'clay-toy-3d', 'surreal-brainrot']
 
 const brief = {
   topic: 'building an autonomous content engine',
@@ -139,26 +141,183 @@ const painters = {
       context.beginPath(); context.arc(70 + column * 30, 1660 + row * 30, 6, 0, Math.PI * 2); context.fill()
     }
   },
+  'hand-doodle': (context, random) => {
+    context.fillStyle = '#fdfbf4'; context.fillRect(0, 0, 1080, 1920) // paper page, top kept clean for overlay
+    context.strokeStyle = 'rgba(120,150,200,0.22)'; context.lineWidth = 3
+    for (let rule = 0; rule < 15; rule += 1) { // faint notebook rules
+      context.beginPath(); context.moveTo(60, 540 + rule * 92); context.lineTo(1020, 540 + rule * 92 + (random() * 8 - 4)); context.stroke()
+    }
+    const wobbly = (points, color = '#37352f', width = 9) => {
+      context.strokeStyle = color; context.lineWidth = width; context.lineCap = 'round'; context.lineJoin = 'round'
+      context.beginPath()
+      points.forEach(([x, y], index) => {
+        const jx = x + (random() * 12 - 6); const jy = y + (random() * 12 - 6)
+        if (index === 0) context.moveTo(jx, jy); else context.lineTo(jx, jy)
+      })
+      context.stroke()
+    }
+    for (let pass = 0; pass < 3; pass += 1) { // rough overlapping head circles
+      const ring = []
+      for (let step = 0; step <= 22; step += 1) {
+        const angle = (step / 22) * Math.PI * 2
+        ring.push([540 + Math.cos(angle) * (195 + random() * 24), 1130 + Math.sin(angle) * (205 + random() * 24)])
+      }
+      wobbly(ring, '#37352f', 7)
+    }
+    for (let strand = 0; strand < 24; strand += 1) { // scribble-fill hair
+      wobbly([[430 + strand * 9, 950 + random() * 40], [438 + strand * 9, 880 - random() * 60]], '#37352f', 5)
+    }
+    wobbly([[470, 1070], [482, 1105]], '#37352f', 13) // two-stroke face
+    wobbly([[612, 1065], [622, 1100]], '#37352f', 13)
+    wobbly([[455, 1225], [520, 1275], [605, 1268], [655, 1215]], '#37352f', 10)
+    wobbly([[540, 1340], [540, 1600]], '#37352f', 11) // stick body
+    wobbly([[540, 1410], [395, 1525]], '#37352f', 10)
+    wobbly([[540, 1410], [695, 1495]], '#37352f', 10)
+    wobbly([[540, 1600], [445, 1785]], '#37352f', 10)
+    wobbly([[540, 1600], [645, 1790]], '#37352f', 10)
+    for (let line = 0; line < 5; line += 1) wobbly([[760 + line * 12, 1080], [830 + line * 12, 1010]], '#37352f', 4) // motion scribbles
+    wobbly([[215, 1690], [420, 1625]], '#ff5a36', 13) // red marker arrow accent
+    wobbly([[420, 1625], [372, 1602], [398, 1665], [420, 1625]], '#ff5a36', 11)
+    for (let pass = 0; pass < 2; pass += 1) { // double marker circle around the payoff
+      const ring = []
+      for (let step = 0; step <= 18; step += 1) {
+        const angle = (step / 18) * Math.PI * 2
+        ring.push([820 + Math.cos(angle) * (135 + random() * 16), 1610 + Math.sin(angle) * (105 + random() * 16)])
+      }
+      wobbly(ring, '#ff5a36', 8)
+    }
+    context.strokeStyle = 'rgba(150,100,50,0.3)'; context.lineWidth = 16 // coffee-ring stain
+    context.beginPath(); context.arc(880, 680, 88, 0.2, Math.PI * 1.85); context.stroke()
+    wobbly([[150, 735], [330, 680]], '#37352f', 6) // crossed-out mistake left visible
+    wobbly([[150, 680], [330, 735]], '#37352f', 6)
+  },
+  'comic-ink': (context, random) => {
+    context.fillStyle = '#f4e9d8'; context.fillRect(0, 0, 1080, 1920) // aged newsprint
+    context.fillStyle = '#d8402f'
+    for (let row = 0; row < 21; row += 1) for (let column = 0; column < 41; column += 1) { // Ben-Day dot sky band held for overlay
+      context.beginPath(); context.arc(20 + column * 27 + (row % 2 ? 13 : 0), 36 + row * 27, 5.5, 0, Math.PI * 2); context.fill()
+    }
+    context.strokeStyle = '#141414'; context.lineWidth = 12
+    context.strokeRect(48, 660, 984, 1200) // printed panel border
+    context.save()
+    context.beginPath(); context.rect(54, 666, 972, 1188); context.clip()
+    context.save(); context.translate(540, 1860); context.rotate(-0.06); context.fillStyle = '#141414' // tilted stark ink skyline
+    for (let building = 0; building < 9; building += 1) context.fillRect(-560 + building * 130, -260 - (building % 3) * 70, 96, 420)
+    context.restore()
+    for (let ray = 0; ray < 32; ray += 1) { // speed lines radiating behind the action
+      const angle = (ray / 32) * Math.PI * 2
+      context.strokeStyle = '#141414'; context.lineWidth = 2.5 + random() * 4
+      context.beginPath()
+      context.moveTo(540 + Math.cos(angle) * 300, 1230 + Math.sin(angle) * 300)
+      context.lineTo(540 + Math.cos(angle) * 820, 1230 + Math.sin(angle) * 820)
+      context.stroke()
+    }
+    const burst = (offsetX, offsetY) => {
+      context.beginPath()
+      for (let point = 0; point < 24; point += 1) {
+        const angle = (point / 24) * Math.PI * 2
+        const radius = point % 2 ? 200 : 320
+        const x = 540 + offsetX + Math.cos(angle) * radius; const y = 1230 + offsetY + Math.sin(angle) * radius
+        if (point === 0) context.moveTo(x, y); else context.lineTo(x, y)
+      }
+      context.closePath()
+    }
+    context.strokeStyle = 'rgba(216,64,47,0.65)'; context.lineWidth = 7; burst(16, 12); context.stroke() // off-register red misprint ghost
+    context.fillStyle = '#f2c832'; context.strokeStyle = '#141414'; context.lineWidth = 10
+    burst(0, 0); context.fill(); context.stroke() // impact burst
+    context.fillStyle = '#141414' // inked hero fist
+    context.beginPath(); context.ellipse(540, 1215, 118, 148, 0.18, 0, Math.PI * 2); context.fill()
+    context.save(); context.translate(505, 1350); context.rotate(0.12); context.fillRect(0, 0, 92, 330); context.restore()
+    context.fillStyle = '#f4e9d8' // knuckle highlights cut from the ink
+    for (let knuckle = 0; knuckle < 3; knuckle += 1) { context.beginPath(); context.ellipse(470 + knuckle * 62, 1150, 20, 30, 0.2, 0, Math.PI * 2); context.fill() }
+    context.strokeStyle = '#141414'; context.lineWidth = 3
+    for (let hatch = 0; hatch < 26; hatch += 1) { // cross-hatched corner shadow
+      context.beginPath(); context.moveTo(70, 1490 + hatch * 14); context.lineTo(330, 1400 + hatch * 14); context.stroke()
+      if (hatch % 2 === 0) { context.beginPath(); context.moveTo(90 + hatch * 9, 1840); context.lineTo(220 + hatch * 9, 1560); context.stroke() }
+    }
+    context.fillStyle = '#2b6cb0'
+    for (let row = 0; row < 12; row += 1) for (let column = 0; column < 12; column += 1) { // flat cyan halftone patch
+      context.beginPath(); context.arc(760 + column * 22 + (row % 2 ? 11 : 0), 1560 + row * 22, 5, 0, Math.PI * 2); context.fill()
+    }
+    context.restore()
+  },
+  'paper-collage': (context, random) => {
+    context.fillStyle = '#f8b229'; context.fillRect(0, 0, 1080, 1920) // one untouched background sheet; top stays clear for overlay
+    for (let fiber = 0; fiber < 900; fiber += 1) { // paper tooth
+      context.fillStyle = random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(120,70,0,0.05)'
+      context.fillRect(random() * 1080, random() * 1920, 2.5, 2.5)
+    }
+    const shadowed = (color, trace) => { // every shape is a separate glued paper layer with a hard offset shadow
+      context.save(); context.translate(12, 14); context.fillStyle = 'rgba(80,40,0,0.28)'; context.beginPath(); trace(); context.fill(); context.restore()
+      context.fillStyle = color; context.beginPath(); trace(); context.fill()
+    }
+    const skyJags = Array.from({ length: 16 }, () => random() * 44 - 22)
+    shadowed('#219ebc', () => { // torn-edge sky strip
+      context.moveTo(0, 640)
+      skyJags.forEach((jag, step) => context.lineTo((step + 1) * 72, 640 + jag))
+      context.lineTo(1080, 930); context.lineTo(0, 930); context.closePath()
+    })
+    shadowed('#e63946', () => { context.arc(840, 800, 130, 0, Math.PI * 2) }) // fringed paper sun
+    context.save(); context.translate(840, 800); context.fillStyle = '#e63946'
+    for (let fringe = 0; fringe < 14; fringe += 1) { context.rotate((Math.PI * 2) / 14); context.fillRect(-14, 150, 28, 62) }
+    context.restore()
+    shadowed('#ffffff', () => { // sticker cloud with gloss stripe
+      context.arc(230, 780, 74, 0, Math.PI * 2); context.arc(330, 750, 92, 0, Math.PI * 2); context.arc(420, 790, 66, 0, Math.PI * 2)
+    })
+    context.fillStyle = 'rgba(255,255,255,0.6)'; context.fillRect(190, 720, 220, 18)
+    shadowed('#43aa8b', () => { // scalloped paper hills
+      context.moveTo(0, 1920); context.lineTo(0, 1600)
+      for (let scallop = 0; scallop < 6; scallop += 1) context.arc(90 + scallop * 180, 1600, 92, Math.PI, 0, false)
+      context.lineTo(1080, 1920); context.closePath()
+    })
+    context.save(); context.translate(400, 1330); context.rotate(-0.05) // paper character, slightly misaligned layers
+    shadowed('#f94144', () => { context.arc(0, 0, 175, 0, Math.PI * 2) }) // circle head
+    shadowed('#5f4bb6', () => { // zigzag-cut hair
+      context.moveTo(-180, -60)
+      for (let tooth = 0; tooth < 6; tooth += 1) { context.lineTo(-150 + tooth * 60, -190); context.lineTo(-120 + tooth * 60, -95) }
+      context.lineTo(180, -60); context.closePath()
+    })
+    shadowed('#ffffff', () => { context.arc(-62, -12, 46, 0, Math.PI * 2) }) // googly-eye stickers
+    shadowed('#ffffff', () => { context.arc(70, -18, 46, 0, Math.PI * 2) })
+    context.fillStyle = '#141414'
+    context.beginPath(); context.arc(-50, 0, 20, 0, Math.PI * 2); context.fill()
+    context.beginPath(); context.arc(84, -6, 20, 0, Math.PI * 2); context.fill()
+    shadowed('#f3722c', () => { context.moveTo(-46, 78); context.lineTo(52, 70); context.lineTo(10, 118); context.closePath() }) // torn paper smile
+    context.restore()
+    shadowed('#90be6d', () => { context.rect(300, 1490, 210, 300) }) // paper body slab
+    shadowed('#577590', () => { context.rect(540, 1540, 250, 60) }) // glued paper arm, wrong angle
+  },
   'clay-toy-3d': (context, random) => {
     const backdrop = context.createLinearGradient(0, 0, 0, 1920)
     backdrop.addColorStop(0, '#fff3dd'); backdrop.addColorStop(1, '#ffd6a5')
     context.fillStyle = backdrop; context.fillRect(0, 0, 1080, 1920)
-    context.fillStyle = '#a8e6cf'; context.fillRect(0, 1500, 1080, 420) // felt tabletop
-    context.fillStyle = '#ff8fab' // squishy clay hero
-    context.beginPath(); context.ellipse(540, 1280, 260, 300, 0, 0, Math.PI * 2); context.fill()
+    context.fillStyle = '#a8e6cf'; context.fillRect(0, 1060, 1080, 860) // felt tabletop, raised so overlays cannot bury the diorama
+    context.fillStyle = '#8fd3b6'; context.fillRect(0, 1060, 1080, 26) // felt edge seam
+    context.fillStyle = '#c9a76d' // cardboard prop box
+    context.save(); context.translate(880, 1010); context.rotate(0.05); context.fillRect(-110, 0, 220, 190); context.fillStyle = '#b08e55'; context.fillRect(-110, 0, 220, 34); context.restore()
+    context.strokeStyle = '#5f9b57'; context.lineWidth = 14; context.lineCap = 'round' // pipe-cleaner plant
+    context.beginPath(); context.moveTo(190, 1150); context.quadraticCurveTo(150, 950, 220, 830); context.stroke()
+    context.fillStyle = '#74b96a'
+    for (const [leafX, leafY] of [[160, 900], [250, 840], [205, 760]]) { context.beginPath(); context.ellipse(leafX, leafY, 46, 26, 0.5, 0, Math.PI * 2); context.fill() }
+    context.fillStyle = '#ff8fab' // squishy clay hero, centered in the upper-middle band
+    context.beginPath(); context.ellipse(540, 860, 235, 270, 0, 0, Math.PI * 2); context.fill()
     context.fillStyle = '#ffb7c9'
-    context.beginPath(); context.ellipse(470, 1170, 110, 130, -0.3, 0, Math.PI * 2); context.fill() // soft clay highlight
+    context.beginPath(); context.ellipse(475, 760, 100, 120, -0.3, 0, Math.PI * 2); context.fill() // soft clay highlight
     context.fillStyle = '#5c4033'
-    context.beginPath(); context.arc(470, 1250, 30, 0, Math.PI * 2); context.fill()
-    context.beginPath(); context.arc(620, 1250, 30, 0, Math.PI * 2); context.fill()
+    context.beginPath(); context.arc(475, 840, 28, 0, Math.PI * 2); context.fill()
+    context.beginPath(); context.arc(615, 840, 28, 0, Math.PI * 2); context.fill()
+    context.strokeStyle = '#5c4033'; context.lineWidth = 12
+    context.beginPath(); context.arc(545, 940, 70, 0.2 * Math.PI, 0.8 * Math.PI); context.stroke() // pressed-in smile
+    context.fillStyle = '#ffffff' // cotton-ball smoke over the box
+    for (const [puffX, puffY, puffR] of [[860, 900, 44], [905, 860, 56], [960, 905, 40]]) { context.beginPath(); context.arc(puffX, puffY, puffR, 0, Math.PI * 2); context.fill() }
     for (let print = 0; print < 90; print += 1) { // thumbprint dents
       context.strokeStyle = 'rgba(120,70,60,0.16)'
       context.lineWidth = 3
-      const x = 320 + random() * 460; const y = 1030 + random() * 480
+      const x = 330 + random() * 440; const y = 630 + random() * 460
       context.beginPath(); context.arc(x, y, 8 + random() * 12, 0, Math.PI * 1.4); context.stroke()
     }
-    context.fillStyle = 'rgba(255,243,221,0.65)'; context.fillRect(0, 1700, 1080, 220) // macro blur band
-    context.fillStyle = 'rgba(255,243,221,0.5)'; context.fillRect(0, 0, 1080, 260)
+    context.fillStyle = 'rgba(255,243,221,0.65)'; context.fillRect(0, 1560, 1080, 360) // macro blur falloff
+    context.fillStyle = 'rgba(255,243,221,0.5)'; context.fillRect(0, 0, 1080, 240)
   },
   'retro-pixel': (context, random) => {
     const grid = document.createElement('canvas')
@@ -310,13 +469,18 @@ async function run() {
   const slides = makeSlides(brief)
   const fixedStyles = IMAGE_STYLES.filter((style) => !style.editable)
 
+  // A medium is only provable if the overlay leaves it visible: these two
+  // styles would otherwise land on the text-heavy hook / scrimmed CTA slides.
+  const SLIDE_OVERRIDES = { 'clay-toy-3d': 2, 'paper-collage': 4 }
+
   const composed = new Map()
   for (const [index, style] of fixedStyles.entries()) {
     status.textContent = `Rendering ${style.name}…`
     const canvas = baseCanvas()
     painters[style.id](canvas.getContext('2d'), seededRandom(0x9e3779b9 ^ (index * 2654435761)))
-    const slide = slides[index % slides.length]
-    const blob = await composeSlide({ image: canvas, slide, direction: slide.direction, preset: 'impact', index: index % slides.length, total: slides.length })
+    const slideIndex = SLIDE_OVERRIDES[style.id] ?? index % slides.length
+    const slide = slides[slideIndex]
+    const blob = await composeSlide({ image: canvas, slide, direction: slide.direction, preset: 'impact', index: slideIndex, total: slides.length })
     composed.set(style.id, URL.createObjectURL(blob))
   }
 
@@ -334,7 +498,7 @@ async function run() {
   await sheet.decode()
 
   const detailHeading = document.createElement('h1')
-  detailHeading.textContent = 'Meme-native and illustrated styles in detail — full frames with the exact prompt directive each one injects'
+  detailHeading.textContent = 'The seven cartoon families in detail — genuinely different rendering media, each with the exact prompt directive it injects'
   root.appendChild(detailHeading)
   const detail = document.createElement('div')
   detail.className = 'detail'

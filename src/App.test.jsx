@@ -9,10 +9,14 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 if (!globalThis.crypto) globalThis.crypto = webcrypto
 if (!globalThis.crypto.randomUUID) globalThis.crypto.randomUUID = randomUUID
 
+// jsdom has no real canvas: the production compositor would await image
+// decodes that never happen and stall every pool lane after its first frame.
+// Composition correctness is covered by compositor.test.js; here it is mocked
+// so app-level generation flows can run to completion.
 vi.mock('./lib/compositor', () => ({
-  composeSlideDataUrl: vi.fn(async () => ({ blob: new Blob(['png']), dataUrl: 'data:image/png;base64,cG5n' })),
+  composeSlideDataUrl: vi.fn(async () => ({ blob: new Blob(['composed']), dataUrl: 'data:image/png;base64,QUFB' })),
   composeContactSheet: vi.fn(async () => new Blob(['sheet'])),
-  loadImage: vi.fn(async () => ({ naturalWidth: 1080, naturalHeight: 1920 })),
+  loadImage: vi.fn(async () => ({})),
 }))
 
 const { default: App } = await import('./App.jsx')
@@ -53,11 +57,11 @@ describe('image style selection in the app', () => {
     expect(styleGroup).not.toBe(designGroup)
     const styleNames = [
       'Creator Candid', 'Direct Flash', 'Cinematic',
-      'Cartoon Pop', 'Clay & Toy 3D', 'Retro Pixel',
+      'Flat 2D Cartoon', 'Hand-Drawn Doodle', 'Comic Ink & Halftone', 'Cut-Paper Collage', 'Clay & Toy 3D', 'Retro Pixel Art',
       'Surreal Brainrot', 'Deep-Fried Meme', 'Cursed Collage', 'Y2K Web Chaos',
       'Custom',
     ]
-    expect(styleGroup.querySelectorAll('[role="radio"]')).toHaveLength(11)
+    expect(styleGroup.querySelectorAll('[role="radio"]')).toHaveLength(14)
     styleNames.forEach((name) => expect(byRole(styleGroup, name), name).toBeTruthy())
     expect(styleGroup.textContent).not.toMatch(/professional/i)
   })
@@ -86,13 +90,13 @@ describe('image style selection in the app', () => {
   })
 
   it('keeps image style and slide design preset selections independent', async () => {
-    await act(async () => byRole(imageStyleGroup(), 'Cartoon Pop').click())
-    expect(byRole(imageStyleGroup(), 'Cartoon Pop').getAttribute('aria-checked')).toBe('true')
+    await act(async () => byRole(imageStyleGroup(), 'Flat 2D Cartoon').click())
+    expect(byRole(imageStyleGroup(), 'Flat 2D Cartoon').getAttribute('aria-checked')).toBe('true')
     expect(byRole(designPresetGroup(), 'Bold Impact').getAttribute('aria-checked')).toBe('true')
 
     await act(async () => byRole(designPresetGroup(), 'Zine Punch').click())
     expect(byRole(designPresetGroup(), 'Zine Punch').getAttribute('aria-checked')).toBe('true')
-    expect(byRole(imageStyleGroup(), 'Cartoon Pop').getAttribute('aria-checked')).toBe('true')
+    expect(byRole(imageStyleGroup(), 'Flat 2D Cartoon').getAttribute('aria-checked')).toBe('true')
   })
 
   it('sends the style selected before generation inside the actual image request', async () => {
@@ -133,7 +137,7 @@ describe('image style selection in the app', () => {
       : { ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) })
     vi.stubGlobal('fetch', fetchSpy)
 
-    await act(async () => byRole(imageStyleGroup(), 'Retro Pixel').click())
+    await act(async () => byRole(imageStyleGroup(), 'Retro Pixel Art').click())
     await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
     const storyButton = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Generate AI hooks + story'))
     await act(async () => storyButton.click())
@@ -147,41 +151,49 @@ describe('image style selection in the app', () => {
     expect(systemPrompt).not.toContain('concrete photorealistic vertical scene')
   })
 
-  it('shows a provenance-bound runtime receipt after story and image generation', async () => {
-    const hooks = Array.from({ length: 5 }, (_, index) => ({ text: `Brainrot hook candidate ${index} worth testing now`, score: 70 + index }))
-    const storyResponse = {
-      hooks,
-      selectedHook: hooks[4].text,
-      slides: Array.from({ length: 5 }, (_, index) => ({
-        role: index === 0 ? 'Hook' : 'Context',
-        text: `Slide ${index + 1} makes one concrete point`,
-        visual: `A toaster-lion hybrid in absurd arena scene ${index + 1}`,
-        layout: index === 0 ? 'impact-stack' : 'editorial-split',
-        emphasis: 'concrete',
-        focalPoint: { x: 0.5, y: 0.6 },
-      })),
-      caption: 'The pipeline receipt proves the selected medium.',
-    }
-    const fetchSpy = vi.fn(async (url) => url.includes('/chat/completions')
-      ? { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(storyResponse) } }] }) }
-      : { ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) })
+  it('generates independent frames in parallel with bounded concurrency and one exact payload per frame', async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const prompts = []
+    const fetchSpy = vi.fn(async (_url, request) => {
+      prompts.push(JSON.parse(request.body).prompt)
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      inFlight -= 1
+      return { ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) }
+    })
     vi.stubGlobal('fetch', fetchSpy)
 
-    await act(async () => byRole(imageStyleGroup(), 'Surreal Brainrot').click())
+    await act(async () => byRole(imageStyleGroup(), 'Flat 2D Cartoon').click())
     await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
-    const storyButton = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Generate AI hooks + story'))
-    await act(async () => storyButton.click())
-    await flush()
     await act(async () => generateButton().click())
+    for (let attempt = 0; attempt < 40 && (fetchSpy.mock.calls.length < 5 || inFlight > 0); attempt += 1) await flush()
     await flush()
 
-    const receipt = document.querySelector('section[aria-label="Generation receipt"]')
-    expect(receipt).toBeTruthy()
-    expect(receipt.textContent).toContain('Surreal Brainrot propagated end to end')
-    expect(receipt.textContent).toContain('A toaster-lion hybrid in absurd arena scene 1')
-    expect(receipt.textContent).toContain('Exact Muse payload')
-    expect(receipt.textContent).toContain('Surreal Brainrot image style')
-    expect(receipt.textContent).toContain('5/5 composed')
+    expect(fetchSpy).toHaveBeenCalledTimes(5) // one call per slide, never duplicated
+    expect(new Set(prompts).size).toBe(5) // five distinct per-frame payloads
+    prompts.forEach((prompt) => expect(prompt).toContain(resolveImageStyle('cartoon-pop').directive))
+    expect(maxInFlight).toBeGreaterThanOrEqual(2) // frames really overlapped …
+    expect(maxInFlight).toBeLessThanOrEqual(3) // … but stayed under the pool cap
+  })
+
+  it('cancelling an in-progress run stops undispatched frames and reports the cancellation', async () => {
+    const fetchSpy = vi.fn((_url, { signal }) => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve({ ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) }), 500)
+      signal?.addEventListener('abort', () => { clearTimeout(timer); reject(Object.assign(new Error('aborted'), { name: 'AbortError' })) })
+    }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
+    await act(async () => generateButton().click())
+    const cancelButton = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Cancel')
+    expect(cancelButton).toBeTruthy()
+    await act(async () => cancelButton.click())
+    for (let attempt = 0; attempt < 40 && !/cancelled/i.test(document.querySelector('[role="status"]')?.textContent || ''); attempt += 1) await flush()
+
+    expect(document.querySelector('[role="status"]').textContent).toMatch(/cancelled/i)
+    expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(3) // only the in-flight pool was ever dispatched
   })
 
   it('exposes an editable Custom direction and uses it in generation prompts', async () => {

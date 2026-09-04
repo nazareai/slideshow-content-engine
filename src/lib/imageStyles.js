@@ -22,7 +22,7 @@ export const IMAGE_STYLE_FIELDS = Object.freeze(['medium', 'subject', 'scene', '
 
 export const IMAGE_STYLE_GROUPS = Object.freeze([
   Object.freeze({ id: 'capture', name: 'Capture', blurb: 'Camera-real looks — the frame reads as an actual photo or film still.' }),
-  Object.freeze({ id: 'illustrated', name: 'Illustration & transformation', blurb: 'The frame is redrawn or rebuilt in a fully non-photographic medium.' }),
+  Object.freeze({ id: 'illustrated', name: 'Illustration & transformation', blurb: 'Each preset is a different rendering medium — flat cel, pen doodle, printed comic, cut paper, pixels, or clay. Only Clay & Toy 3D is three-dimensional.' }),
   Object.freeze({ id: 'meme', name: 'Meme-native', blurb: 'Internet-born aesthetics — compression, chaos, and absurdity are the style.' }),
   Object.freeze({ id: 'custom', name: 'Your direction', blurb: 'Describe the style yourself — it drives every image prompt verbatim.' }),
 ])
@@ -73,23 +73,69 @@ export const IMAGE_STYLES = Object.freeze([
   }),
 
   // ————— Illustration & transformation —————
+  // Seven cartoon families, each a genuinely different rendering medium. The
+  // five flat media (cel, doodle, comic, paper, pixel) carry explicit bans on
+  // 3D, CGI, clay, plastic, photorealism, camera, and lens language so the
+  // image model cannot converge them all onto the same glossy 3D look.
   Object.freeze({
-    id: 'cartoon-pop', name: 'Cartoon Pop', group: 'illustrated',
-    tagline: 'Flat 2D cartoon illustration — thick outlines, cel shading, candy color.',
+    id: 'cartoon-pop', name: 'Flat 2D Cartoon', group: 'illustrated',
+    tagline: 'Cel-animation flatness — thick outlines, flat color fills, candy palette. Drawn, never 3D.',
     swatch: Object.freeze(['#ff4fa3', '#ffd93b', '#2457ff']),
     directive: Object.freeze({
-      medium: 'A flat 2D digital cartoon illustration — hand-drawn vector-style linework with cel-shaded fills; unmistakably a drawing, never a photograph and never a 3D render.',
-      subject: 'Characters and objects redrawn as bold cartoon figures — thick clean black outlines, exaggerated expressions, rubber-limbed poses, simplified faces built for huge readable emotion.',
-      scene: 'Flat graphic backgrounds built from simple shapes — a two-tone room, a starburst wall, a chunky patterned sky — with depth suggested by overlapping flat layers instead of perspective realism.',
+      medium: 'A completely flat 2D cel-animation cartoon still — hand-drawn linework with solid flat color fills and zero depth; unmistakably a drawing on a flat cel, never a photograph, never a 3D render, never computer-generated dimensional imagery.',
+      subject: 'Characters and objects redrawn as bold flat cartoon figures — thick clean black outlines, exaggerated expressions, rubber-limbed poses, simplified faces built for huge readable emotion, every shape a flat fill with at most one hard-edged cel shadow tone.',
+      scene: 'Flat graphic backgrounds built from simple shapes — a two-tone room, a starburst wall, a chunky patterned sky — with depth suggested only by overlapping flat layers, never by perspective realism or dimensional shading.',
       composition: 'A sticker-like hero character filling the lower two thirds at a dynamic angle, set against a flat solid color field up top kept empty for the overlay text.',
-      texture: 'Perfectly flat digital ink with crisp edges; at most a halftone-dot or paper-grain accent — no photographic grain and no rendered gloss.',
-      palette: 'Loud candy saturation — hot pink, cyan, sunshine yellow, and cobalt slammed against each other with black outlines holding it together.',
-      negative: 'Absolutely no photographic elements, no photorealistic skin or fabric, no 3D rendering or clay shading, no camera grain, no lens blur, no realistic lighting.',
+      texture: 'Perfectly flat digital ink with crisp edges; at most a paper-grain accent — no gradients on skin, no soft shading, no photographic grain, no rendered gloss.',
+      palette: 'Loud candy saturation — hot pink, cyan, sunshine yellow, and cobalt slammed against each other in flat unbroken fields with black outlines holding it together.',
+      negative: 'Strictly flat and drawn: no 3D, no CGI, no clay or plasticine, no plastic or vinyl toy sheen, no photorealism, no photographic elements, no camera grain, no lens blur or depth of field, no volumetric or realistic lighting, no dimensional shading or ambient occlusion.',
+    }),
+  }),
+  Object.freeze({
+    id: 'hand-doodle', name: 'Hand-Drawn Doodle', group: 'illustrated',
+    tagline: 'Marker-and-ballpoint scribbles on paper — wobbly lines, notebook energy. Sketched, never 3D.',
+    swatch: Object.freeze(['#fdfbf4', '#37352f', '#ff5a36']),
+    directive: Object.freeze({
+      medium: 'A hand-drawn doodle in marker and ballpoint pen on flat paper — wobbly scribbled linework like a sketchbook page brought to life; unmistakably hand-sketched ink on paper, never a photograph, never a 3D render, never smooth digital vector art.',
+      subject: 'People and objects as loose naive doodle characters — shaky confident outlines, scribble-fill hair and clothes, gloriously wrong proportions, expressive faces drawn from two dots and a wobbly line.',
+      scene: 'A mostly bare paper page with a few scrawled props — hand-drawn arrows, stars, coffee-ring stains, a crossed-out mistake left proudly visible — the emptiness of the paper is part of the scene.',
+      composition: 'One doodle hero drawn big and off-center with scribbled motion lines, the top of the page left as untouched paper white so the overlay text sits in clean space.',
+      texture: 'Visible marker streaks, ballpoint pressure wobble, graphite smudges, and paper tooth showing through every scribbled fill — no digital smoothness anywhere.',
+      palette: 'Two or three pen colors at most — ink black plus one loud marker accent like red or blue — over warm paper white, with nothing blended and no gradients.',
+      negative: 'Strictly pen on paper: no 3D, no CGI, no clay, no plastic materials, no photorealism, no photographic elements, no camera or lens effects, no clean vector curves, no cel shading, no painterly digital rendering, no realistic lighting.',
+    }),
+  }),
+  Object.freeze({
+    id: 'comic-ink', name: 'Comic Ink & Halftone', group: 'illustrated',
+    tagline: 'Pulp comic-book printing — brush ink, Ben-Day dots, action panels. Printed, never 3D.',
+    swatch: Object.freeze(['#f4e9d8', '#141414', '#e63946']),
+    directive: Object.freeze({
+      medium: 'A printed comic-book panel in bold ink and halftone — heavy brush-inked linework with Ben-Day dot shading on aged newsprint; unmistakably a flat printed 2D comic page, never a photograph, never a 3D render, never painted digital concept art.',
+      subject: 'Characters as dynamic inked comic figures — heavy brush outlines, dramatic cross-hatched shadows, gritted teeth and flared expressions, action poses frozen mid-panel with speed lines trailing the movement.',
+      scene: 'High-drama comic staging — speed lines radiating behind the action, a tilted-horizon cityscape or interior reduced to stark ink shapes, an impact burst framing the key moment inside a thin printed panel border.',
+      composition: 'The inked action fills the lower panel while a flat halftone-dot sky band across the top stays quiet for the overlay text.',
+      texture: 'Visible halftone dot grids in every mid-tone, slight off-register color misprint, newsprint grain, and solid ink blacks — the finish of a pulp comic page.',
+      palette: 'Four-color pulp printing — ink black, halftone red, process yellow, and flat cyan-blue, all slightly faded like an old newsstand issue.',
+      negative: 'Strictly printed ink: no 3D, no CGI, no clay, no plastic sheen, no photorealism, no photographic textures, no camera or lens effects, no soft digital gradients, no airbrushed painting, no dimensional rendering — only flat ink lines and halftone dots.',
+    }),
+  }),
+  Object.freeze({
+    id: 'paper-collage', name: 'Cut-Paper Collage', group: 'illustrated',
+    tagline: 'Construction-paper cutouts and stickers — scissor edges, glued flat layers. Paper, never 3D.',
+    swatch: Object.freeze(['#f94144', '#f8b229', '#43aa8b']),
+    directive: Object.freeze({
+      medium: 'A flat cut-paper and sticker collage illustration — construction-paper shapes cut with scissors and glued down in layered flats like a craft-table mural; unmistakably paper craft, never a photograph, never a 3D render, never digital painting.',
+      subject: 'Characters assembled from torn and scissor-cut paper shapes — a circle head, zigzag-cut hair, googly-eye stickers — every part a separate flat paper layer with visible cut edges and slightly wrong alignment.',
+      scene: 'A layered paper landscape — scalloped paper hills, a fringed paper sun, sticker clouds — everything flat, front-facing, and obviously glued onto a paper board.',
+      composition: 'The paper character sits low in the frame among layered paper scenery, while one solid sheet of untouched background paper spans the top for the overlay text.',
+      texture: 'Fibrous torn paper edges, thin hard shadows where paper layers overlap, glue wrinkles, and sticker gloss on small accents — real craft-table evidence, no digital smoothness.',
+      palette: 'Bright construction-paper primaries — poster red, sunflower yellow, grass green, and sky blue — each shape one solid unmixed color with no gradients.',
+      negative: 'Strictly flat paper: no 3D, no CGI, no clay or plasticine, no plastic toys, no photorealism, no photographic source material, no camera or lens effects, no digital painting, no dimensional rendering — only flat cut paper and stickers.',
     }),
   }),
   Object.freeze({
     id: 'clay-toy-3d', name: 'Clay & Toy 3D', group: 'illustrated',
-    tagline: 'Handmade miniature world — clay figures, toy sets, soft macro depth.',
+    tagline: 'The deliberately 3D preset — stop-motion clay figures, toy dioramas, soft macro depth.',
     swatch: Object.freeze(['#ffd6a5', '#a8e6cf', '#ff8fab']),
     directive: Object.freeze({
       medium: 'A handcrafted stop-motion-style 3D scene — modeling-clay and toy-plastic figures on a miniature tabletop diorama, shot macro with tilt-shift depth.',
@@ -102,8 +148,8 @@ export const IMAGE_STYLES = Object.freeze([
     }),
   }),
   Object.freeze({
-    id: 'retro-pixel', name: 'Retro Pixel', group: 'illustrated',
-    tagline: 'Chunky game-screen pixel art — strict grid, dithered shade, sprite drama.',
+    id: 'retro-pixel', name: 'Retro Pixel Art', group: 'illustrated',
+    tagline: 'Chunky game-screen pixel art — strict grid, dithered shade, sprite drama. Pixels, never 3D.',
     swatch: Object.freeze(['#2b2d64', '#3ec54b', '#e832a0']),
     directive: Object.freeze({
       medium: 'Chunky low-resolution pixel art on a strict square grid — a hand-placed retro video-game scene with hard crisp pixel edges, never smooth vector art and never a photo.',
@@ -112,7 +158,7 @@ export const IMAGE_STYLES = Object.freeze([
       composition: 'The sprite scene anchored in the lower half like a level foreground, with a flat dithered sky band across the top kept clear for overlay text.',
       texture: 'Visible square pixels everywhere, ordered dithering for shading, deliberate aliasing on every edge — no smoothing, no anti-aliased curves.',
       palette: 'A limited 32-color retro console palette — deep indigo nights, emerald greens, and hot magenta accents with zero smooth gradients.',
-      negative: 'No smooth anti-aliased curves, no photographic textures, no 3D rendering, no painterly brushwork, no motion blur or lens effects.',
+      negative: 'Strictly hard-edged flat pixels: no 3D, no CGI, no clay, no plastic materials, no photorealism, no photographic textures, no camera or lens effects, no smooth anti-aliased curves, no painterly brushwork, no motion blur, no dimensional rendering.',
     }),
   }),
 
