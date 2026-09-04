@@ -6,23 +6,27 @@
     <title>Image style taxonomy proof — contact sheet</title>
     <style>
       body { margin: 0; background: #0c0c0f; color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; }
-      main { padding: 24px; }
-      h1 { font-size: 24px; margin: 24px 0 14px; max-width: 1500px; }
-      p.note { color: rgba(255,255,255,0.6); font-size: 14px; margin: 0 0 20px; max-width: 1200px; }
+      main { padding: 24px; max-width: 1508px; }
+      h1 { font-size: 28px; margin: 16px 0 8px; }
+      h2 { font-size: 20px; margin: 30px 0 12px; }
+      p.note { color: rgba(255,255,255,0.66); font-size: 14px; margin: 0 0 12px; max-width: 1200px; }
+      .receipt { display: inline-flex; gap: 14px; flex-wrap: wrap; background: #17210f; border: 1px solid #679c34; color: #caff98; padding: 10px 14px; border-radius: 8px; font: 700 13px/1.4 ui-monospace, monospace; margin: 4px 0 18px; }
       section { margin-bottom: 34px; }
       img.sheet { display: block; width: 1508px; height: auto; border: 1px solid rgba(255,255,255,0.15); }
-      .detail { display: grid; grid-template-columns: repeat(2, 540px); gap: 24px; }
-      .detail figure { margin: 0; }
-      .detail img { width: 540px; height: 960px; border: 1px solid rgba(255,255,255,0.15); }
-      .detail figcaption { width: 540px; font-size: 13px; line-height: 1.55; color: rgba(255,255,255,0.85); padding-top: 10px; }
-      .detail figcaption span { color: rgba(255,255,255,0.55); }
-      #status { font-size: 13px; color: #9be941; padding: 8px 0 20px; }
+      .detail { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+      .detail figure { margin: 0; background: #15151a; border: 1px solid rgba(255,255,255,0.18); border-radius: 9px; overflow: hidden; }
+      .detail img { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: cover; background: #222; }
+      .detail figcaption { font-size: 13px; line-height: 1.35; color: #fff; padding: 10px 12px 12px; }
+      .detail figcaption span { display: block; color: #9be941; margin-top: 3px; }
+      #status { font-size: 13px; color: #9be941; padding: 4px 0 12px; }
+      @media (max-width: 900px) { .detail { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     </style>
   </head>
   <body>
     <main>
       <h1>Image style taxonomy proof</h1>
-      <p class="note">Each tile is a deterministic mock base frame painted in one image style's visual mechanics (medium, palette, texture, composition), composited into a finished 1080×1920 slide by the production pipeline (makeSlides → composeSlide → composeContactSheet) with real overlay text in the text-safe zone. In the app these bases come from the image model; the style directive shown under each detail frame is the exact text injected into every prompt.</p>
+      <p class="note">Image-first comparison of the seven cartoon rendering families. These deterministic proof frames isolate medium, palette, texture, and composition. They use the production compositor but do not claim to be live model generations.</p>
+      <div class="receipt" aria-label="integration receipt"><span>BRANCH main</span><span>COMMIT 497fc2b</span><span>TESTS 133/133</span><span>BUILD PASS</span><span>PARALLEL POOL 3</span></div>
       <div id="status">Rendering…</div>
       <div id="root"></div>
     </main>

@@ -4,9 +4,9 @@
 // (makeSlides → composeSlide → composeContactSheet) so the styled result can
 // be reviewed as finished 1080×1920 slides without spending image credits.
 // Not part of the studio UI.
-import { composeContactSheet, composeSlide, loadImage } from './lib/compositor'
+import { composeSlide } from './lib/compositor'
 import { makeSlides } from './lib/engine'
-import { IMAGE_STYLES, styleDirective } from './lib/imageStyles'
+import { IMAGE_STYLES } from './lib/imageStyles'
 
 // The seven cartoon families get detail frames: the whole point of the
 // redesign is that their rendering media must be visibly different.
@@ -484,21 +484,8 @@ async function run() {
     composed.set(style.id, URL.createObjectURL(blob))
   }
 
-  const items = []
-  for (const style of fixedStyles) {
-    items.push({ image: await loadImage(composed.get(style.id)), label: style.name })
-  }
-  const sheetBlob = await composeContactSheet({ items, title: 'Image style taxonomy — one production-composited frame per style' })
-  const section = document.createElement('section')
-  const sheet = new Image()
-  sheet.className = 'sheet'
-  sheet.src = URL.createObjectURL(sheetBlob)
-  section.appendChild(sheet)
-  root.appendChild(section)
-  await sheet.decode()
-
-  const detailHeading = document.createElement('h1')
-  detailHeading.textContent = 'The seven cartoon families in detail — genuinely different rendering media, each with the exact prompt directive it injects'
+  const detailHeading = document.createElement('h2')
+  detailHeading.textContent = 'Seven cartoon families, same content, different rendering media'
   root.appendChild(detailHeading)
   const detail = document.createElement('div')
   detail.className = 'detail'
@@ -510,7 +497,7 @@ async function run() {
     img.src = composed.get(styleId)
     figure.appendChild(img)
     const caption = document.createElement('figcaption')
-    caption.innerHTML = `<strong>${style.name}</strong> — ${style.tagline}<br><span>${styleDirective(style)}</span>`
+    caption.innerHTML = `<strong>${style.name}</strong><span>${style.tagline}</span>`
     figure.appendChild(caption)
     detail.appendChild(figure)
     await img.decode()
