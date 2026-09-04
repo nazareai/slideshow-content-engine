@@ -1,4 +1,5 @@
 import { planDirections } from './artDirection'
+import { overlaySettingsKey } from './overlayComposite'
 
 const weakWords = ['ultimate', 'revolutionary', 'game-changing', 'unlock', 'secret hack']
 const palettes = [
@@ -54,23 +55,15 @@ export function makeSlides({ topic, audience, angle, observation, slideCount }) 
   return slides.map((slide, index) => ({ ...slide, direction: directions[index] }))
 }
 
-// True when the stored render still matches the slide copy, visual direction,
-// planned composition, active style preset, and (when supplied) the selected
-// image-style directive — otherwise export is stale.
-export function overlaySettingsKey(value = {}) {
-  const position = ['auto', 'top', 'center', 'bottom'].includes(value.position) ? value.position : 'auto'
-  const clampValue = (input, min, max, fallback) => Math.max(min, Math.min(max, Number.isFinite(Number(input)) ? Number(input) : fallback))
-  return JSON.stringify({
-    position,
-    offsetX: clampValue(value.offsetX, -320, 320, 0),
-    offsetY: clampValue(value.offsetY, -560, 560, 0),
-    backgroundEnabled: Boolean(value.backgroundEnabled),
-    backgroundOpacity: clampValue(value.backgroundOpacity, 0, 1, 0.72),
-    backgroundPadding: clampValue(value.backgroundPadding, 0, 96, 32),
-    textScale: clampValue(value.textScale, 0.7, 1.35, 1),
-  })
-}
+// Re-exported, not reimplemented: the freshness key must be derived from the
+// exact same normalization the compositor renders with. A second copy here
+// silently let a slide render with one padding while being keyed as another,
+// so a composite change could leave an approved, stale frame in the export.
+export { overlaySettingsKey }
 
+// True when the stored render still matches the slide copy, visual direction,
+// planned composition, active style preset, per-slide overlay composite, and
+// (when supplied) the selected image-style directive — otherwise export is stale.
 export function isRenderCurrent(slide, rendered, presetId, styleDirective) {
   if (!rendered?.composedBlob) return false
   return rendered.renderedText === slide.text && rendered.renderedVisual === slide.visual &&

@@ -1,4 +1,5 @@
 import { canvasSpec, getPreset, LAYOUTS, validateDirection } from './artDirection'
+import { composeOverlayGeometry, normalizeOverlaySettings } from './overlayComposite'
 
 const clean = (value) => String(value ?? '').trim().replace(/\s+/g, ' ')
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
@@ -7,32 +8,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 // the bottom for caption + sound, and the right rail for the action stack.
 export const textSafeArea = canvasSpec.safe
 
-export const DEFAULT_OVERLAY_SETTINGS = Object.freeze({
-  position: 'auto',
-  offsetX: 0,
-  offsetY: 0,
-  backgroundEnabled: false,
-  backgroundOpacity: 0.72,
-  backgroundPadding: 32,
-  textScale: 1,
-})
-
-export function normalizeOverlaySettings(value = {}) {
-  const position = ['auto', 'top', 'center', 'bottom'].includes(value.position) ? value.position : 'auto'
-  return {
-    position,
-    offsetX: clamp(Number(value.offsetX) || 0, -320, 320),
-    offsetY: clamp(Number(value.offsetY) || 0, -560, 560),
-    backgroundEnabled: Boolean(value.backgroundEnabled),
-    backgroundOpacity: clamp(Number(value.backgroundOpacity) || 0, 0, 1),
-    backgroundPadding: clamp(Number(value.backgroundPadding) || 0, 0, 96),
-    textScale: clamp(Number(value.textScale) || 1, 0.7, 1.35),
-  }
-}
-
-export function overlaySettingsKey(value) {
-  return JSON.stringify(normalizeOverlaySettings(value))
-}
+export { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings, overlaySettingsKey, PANEL_CHROME } from './overlayComposite'
 
 function fnv1a(value) {
   let hash = 0x811c9dc5
@@ -87,6 +63,8 @@ export function fitText(text, measure, { maxWidth, maxLines, fontRange, lineHeig
 }
 
 // Frame: the box the main copy block must live in, per layout and preset.
+// Deliberately holds no panel position: a panel is never a constant here,
+// it is derived from the copy that was actually laid out (see the composite).
 function textFrame(layoutId, preset, direction) {
   const safe = textSafeArea
   const safeWidth = safe.right - safe.left
@@ -95,7 +73,7 @@ function textFrame(layoutId, preset, direction) {
     case 'impact-stack':
       return { x: safe.left, maxWidth: safeWidth, align: 'left', anchor: 'bottom', yTop: safe.top + 130, yBottom: safe.bottom - 104 }
     case 'editorial-split':
-      return { x: safe.left + 16, maxWidth: Math.round((safeWidth - 32) * 0.94), align: 'left', anchor: 'top', yTop: 1250, yBottom: safe.bottom, panelTop: 1120 }
+      return { x: safe.left + 16, maxWidth: Math.round((safeWidth - 32) * 0.94), align: 'left', anchor: 'top', yTop: 1250, yBottom: safe.bottom }
     case 'evidence-card': {
       const x = 56 + pad
       return { x, maxWidth: Math.round(safeWidth * 0.78), align: 'left', anchor: 'center', yTop: safe.top + 150, yBottom: safe.bottom - 150, pad }
@@ -111,7 +89,7 @@ function textFrame(layoutId, preset, direction) {
         : { x: safe.left, maxWidth: Math.round(safeWidth * 0.88), align: 'left', anchor: 'center', yTop: safe.top + 90, yBottom: 900 }
     }
     case 'takeaway-ledger':
-      return { x: safe.left, maxWidth: Math.round(safeWidth * 0.92), align: 'left', anchor: 'top', yTop: 1246, yBottom: safe.bottom, panelTop: 1140 }
+      return { x: safe.left, maxWidth: Math.round(safeWidth * 0.92), align: 'left', anchor: 'top', yTop: 1246, yBottom: safe.bottom }
     case 'cta-stamp':
       return { x: Math.round((safe.left + safe.right) / 2), maxWidth: Math.round(safeWidth * 0.8), align: 'center', anchor: 'center', yTop: 830, yBottom: 1290 }
     default:
@@ -136,11 +114,15 @@ export function layoutSlideText({ text, role = 'setup', direction, preset: prese
 
   const blockHeight = fitted.lines.length * fitted.lineHeight
   const span = frame.yBottom - frame.yTop
-  const anchor = overlay.position === 'auto' ? frame.anchor : overlay.position
-  const blockTop = anchor === 'top' ? frame.yTop
-    : anchor === 'bottom' ? frame.yBottom - blockHeight
+  const anchoredTop = (which) => which === 'top' ? frame.yTop
+    : which === 'bottom' ? frame.yBottom - blockHeight
     : Math.round(frame.yTop + Math.max(0, (span - blockHeight) / 2))
-  const top = clamp(blockTop + overlay.offsetY, textSafeArea.top, Math.max(textSafeArea.top, textSafeArea.bottom - blockHeight))
+  const anchor = overlay.position === 'auto' ? frame.anchor : overlay.position
+  const top = clamp(anchoredTop(anchor) + overlay.offsetY, textSafeArea.top, Math.max(textSafeArea.top, textSafeArea.bottom - blockHeight))
+  // How far the reviewer moved the composite away from where this layout puts
+  // it. Both terms use the same block height, so resizing the copy alone never
+  // registers as a displacement.
+  const displacement = top - anchoredTop(frame.anchor)
 
   const lines = fitted.lines.map((line, lineIndex) => {
     const width = measure(line, fitted.fontSize)
@@ -168,8 +150,17 @@ export function layoutSlideText({ text, role = 'setup', direction, preset: prese
     }
   }
 
+  // The composite — copy box plus the panel painted beneath it — is resolved
+  // here, once, from the copy that was actually laid out. Every painter reads
+  // its backing surface from this instead of from static frame constants, so
+  // panel and text can only ever move and resize together.
+  const composite = composeOverlayGeometry({
+    layoutId: layout.id, frame, lines, blockTop: top, blockBottom: top + blockHeight, overlay,
+    frameSpan: { top: frame.yTop + displacement, bottom: frame.yBottom + displacement },
+  })
+
   return {
-    preset, layout: layout.id, direction: resolved, frame, lines, emphasisSpan, overlay,
+    preset, layout: layout.id, direction: resolved, frame, lines, emphasisSpan, overlay, composite,
     fontSize: fitted.fontSize, lineHeight: fitted.lineHeight,
     blockTop: top, blockBottom: top + blockHeight, index, total,
   }
@@ -288,16 +279,12 @@ function paintEmphasis(context, plan) {
 
 function paintTextBlock(context, plan, color) {
   const { preset, fontSize, emphasisSpan } = plan
-  if (plan.overlay.backgroundEnabled && plan.lines.length) {
-    const padding = plan.overlay.backgroundPadding
-    const left = clamp(Math.min(...plan.lines.map((line) => line.x)) - padding, textSafeArea.left, textSafeArea.right)
-    const right = clamp(Math.max(...plan.lines.map((line) => line.x + line.width)) + padding, textSafeArea.left, textSafeArea.right)
-    const top = clamp(plan.blockTop - padding, textSafeArea.top, textSafeArea.bottom)
-    const bottom = clamp(plan.blockBottom + padding, textSafeArea.top, textSafeArea.bottom)
+  const { backdrop } = plan.composite
+  if (backdrop && backdrop.width > 0 && backdrop.height > 0) {
     context.save()
     context.globalAlpha = plan.overlay.backgroundOpacity
     context.fillStyle = '#000000'
-    context.fillRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top))
+    context.fillRect(backdrop.x, backdrop.y, backdrop.width, backdrop.height)
     context.restore()
   }
   paintEmphasis(context, plan)
@@ -327,7 +314,10 @@ const painters = {
   'impact-stack': (context, plan) => {
     const { preset, index, total } = plan
     const safe = textSafeArea
-    verticalScrim(context, plan.blockTop - 420, canvasSpec.height, Math.min(0.92, 0.8 * preset.scrimBoost))
+    const { scrim } = plan.composite
+    // The base scrim belongs to the composite: lifting the copy lifts the
+    // darkened region with it and hands the bottom of the image back.
+    verticalScrim(context, scrim.from, scrim.to, Math.min(0.92, 0.8 * preset.scrimBoost))
     context.fillStyle = 'rgba(8, 8, 10, 0.34)'
     context.fillRect(0, 0, canvasSpec.width, 300)
     const numeral = String(index + 1).padStart(2, '0')
@@ -343,64 +333,68 @@ const painters = {
 
   'editorial-split': (context, plan) => {
     const { preset, frame, index, total } = plan
-    const panelTop = frame.panelTop
-    verticalScrim(context, panelTop - 320, panelTop, 0.3 * preset.scrimBoost)
-    paintPanel(context, preset, 0, panelTop, canvasSpec.width, canvasSpec.height - panelTop, preset.palette.paper, 0)
+    const { panel, edge, text } = plan.composite
+    // `edge.top` is the panel's logical top edge before any bleed, so the
+    // kicker, accent bar, and rule stay pinned to the copy they introduce.
+    verticalScrim(context, edge.top - 320, edge.top, 0.3 * preset.scrimBoost)
+    paintPanel(context, preset, panel.x, panel.y, panel.width, panel.height, preset.palette.paper, 0)
     context.fillStyle = preset.palette.accent
     const barX = plan.direction.mirror ? textSafeArea.right - 12 : textSafeArea.left - 28
-    context.fillRect(barX, panelTop + 64, 12, 210)
-    kickerLabel(context, preset, `${String(index + 1).padStart(2, '0')} — the setup`, frame.x, panelTop + 66, { color: preset.palette.ink })
+    context.fillRect(barX, edge.top + 64, 12, 210)
+    kickerLabel(context, preset, `${String(index + 1).padStart(2, '0')} — the setup`, text.left, edge.top + 66, { color: preset.palette.ink })
     context.fillStyle = 'rgba(0, 0, 0, 0.22)'
-    context.fillRect(frame.x, panelTop + 118, Math.round(frame.maxWidth * 0.42), 3)
+    context.fillRect(text.left, edge.top + 118, Math.round(frame.maxWidth * 0.42), 3)
     paintTextBlock(context, plan, preset.palette.ink)
-    kickerLabel(context, preset, `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`, textSafeArea.right, panelTop + 66, { color: 'rgba(0,0,0,0.45)', align: 'right' })
+    kickerLabel(context, preset, `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`, textSafeArea.right, edge.top + 66, { color: 'rgba(0,0,0,0.45)', align: 'right' })
   },
 
   'evidence-card': (context, plan) => {
     const { preset, frame, index, total } = plan
+    const { panel: card, text } = plan.composite
     context.fillStyle = `rgba(10, 10, 12, ${(0.3 * preset.scrimBoost).toFixed(3)})`
     context.fillRect(0, 0, canvasSpec.width, canvasSpec.height)
     const pad = frame.pad
-    const cardX = frame.x - pad
-    const cardTop = plan.blockTop - pad - 84
-    const cardWidth = frame.maxWidth + pad * 2
-    const cardHeight = plan.blockBottom - plan.blockTop + pad * 2 + 84 + 92
-    paintPanel(context, preset, cardX, cardTop, cardWidth, cardHeight, preset.palette.paper)
+    paintPanel(context, preset, card.x, card.y, card.width, card.height, preset.palette.paper)
     context.fillStyle = preset.palette.accent
-    const spineX = plan.direction.mirror ? cardX + cardWidth - 12 : cardX
-    context.fillRect(spineX, cardTop, 12, cardHeight)
+    const spineX = plan.direction.mirror ? card.x + card.width - 12 : card.x
+    context.fillRect(spineX, card.y, 12, card.height)
     context.font = `${preset.display.weight} 130px ${preset.display.family}`
     context.textBaseline = 'top'
     context.fillStyle = preset.palette.accent
-    context.fillText('”', frame.x, cardTop + 8)
+    context.fillText('”', text.left, card.y + 8)
     paintTextBlock(context, plan, preset.palette.ink)
-    kickerLabel(context, preset, `field note · ${String(index + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`, frame.x, plan.blockBottom + pad - 6, { color: 'rgba(0,0,0,0.5)' })
+    kickerLabel(context, preset, `field note · ${String(index + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`, text.left, text.bottom + pad - 6, { color: 'rgba(0,0,0,0.5)' })
   },
 
   'tension-rail': (context, plan) => {
-    const { preset, frame, index, total } = plan
-    const mirrored = plan.direction.mirror
-    const gradient = context.createLinearGradient(mirrored ? canvasSpec.width : 0, 0, mirrored ? 0 : canvasSpec.width, 0)
+    const { preset, index, total } = plan
+    const { text } = plan.composite
+    // The side scrim is the composite's backing surface: the darkened edge is
+    // always the edge the copy sits against, so moving the copy across the
+    // frame moves the darkened region with it instead of stranding both.
+    const rightSide = (text.left + text.right) / 2 >= canvasSpec.width / 2
+    const gradient = context.createLinearGradient(rightSide ? canvasSpec.width : 0, 0, rightSide ? 0 : canvasSpec.width, 0)
     gradient.addColorStop(0, `rgba(8, 8, 10, ${Math.min(0.92, 0.85 * preset.scrimBoost).toFixed(3)})`)
     gradient.addColorStop(0.66, 'rgba(8, 8, 10, 0.12)')
     gradient.addColorStop(1, 'rgba(8, 8, 10, 0)')
     context.fillStyle = gradient
     context.fillRect(0, 0, canvasSpec.width, canvasSpec.height)
     context.fillStyle = preset.palette.accent
-    const barX = mirrored ? textSafeArea.right + 18 : textSafeArea.left - 30
+    const barX = rightSide ? text.right + 18 : text.left - 30
     context.fillRect(barX, plan.blockTop - 8, 10, plan.blockBottom - plan.blockTop + 16)
-    kickerLabel(context, preset, 'the catch', mirrored ? frame.x : frame.x, plan.blockTop - 74, { color: preset.palette.accent, align: mirrored ? 'right' : 'left' })
+    kickerLabel(context, preset, 'the catch', rightSide ? text.right : text.left, plan.blockTop - 74, { color: preset.palette.accent, align: rightSide ? 'right' : 'left' })
     paintTextBlock(context, plan, '#ffffff')
     context.fillStyle = preset.palette.accent
     for (let dot = 0; dot < 3; dot += 1) {
-      const dotX = mirrored ? frame.x - 18 - dot * 40 : frame.x + dot * 40
+      const dotX = rightSide ? text.right - 18 - dot * 40 : text.left + dot * 40
       context.fillRect(dotX, plan.blockBottom + 46, 18, 18)
     }
-    kickerLabel(context, preset, `${String(index + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`, mirrored ? textSafeArea.left : textSafeArea.right, textSafeArea.bottom - 30, { color: 'rgba(255,255,255,0.55)', align: mirrored ? 'left' : 'right' })
+    kickerLabel(context, preset, `${String(index + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`, rightSide ? textSafeArea.left : textSafeArea.right, textSafeArea.bottom - 30, { color: 'rgba(255,255,255,0.55)', align: rightSide ? 'left' : 'right' })
   },
 
   'spotlight-reveal': (context, plan) => {
     const { preset, direction } = plan
+    const { scrim, text } = plan.composite
     const focalX = direction.focalPoint.x * canvasSpec.width
     const focalY = direction.focalPoint.y * canvasSpec.height
     const spotlight = context.createRadialGradient(focalX, focalY, 190, focalX, focalY, 1250)
@@ -409,35 +403,40 @@ const painters = {
     spotlight.addColorStop(1, `rgba(8, 8, 10, ${Math.min(0.9, 0.74 * preset.scrimBoost).toFixed(3)})`)
     context.fillStyle = spotlight
     context.fillRect(0, 0, canvasSpec.width, canvasSpec.height)
-    verticalScrim(context, plan.blockTop - 200, plan.blockBottom + 160, 0.42 * preset.scrimBoost)
-    kickerLabel(context, preset, 'the shift', plan.frame.x, plan.blockTop - 76, { chip: true })
+    verticalScrim(context, scrim.from, scrim.to, 0.42 * preset.scrimBoost)
+    kickerLabel(context, preset, 'the shift', text.left, plan.blockTop - 76, { chip: true })
     paintTextBlock(context, plan, '#ffffff')
     context.fillStyle = preset.palette.accent
-    context.fillRect(plan.frame.x, plan.blockBottom + 42, 150, 8)
+    context.fillRect(text.left, plan.blockBottom + 42, 150, 8)
   },
 
   'takeaway-ledger': (context, plan) => {
     const { preset, frame, index, total } = plan
-    const panelTop = frame.panelTop
-    verticalScrim(context, panelTop - 360, panelTop, 0.34 * preset.scrimBoost)
-    paintPanel(context, preset, 0, panelTop, canvasSpec.width, canvasSpec.height - panelTop, preset.palette.paper, 0)
+    const { panel, edge, text } = plan.composite
+    verticalScrim(context, edge.top - 360, edge.top, 0.34 * preset.scrimBoost)
+    paintPanel(context, preset, panel.x, panel.y, panel.width, panel.height, preset.palette.paper, 0)
     const badge = 104
-    const badgeX = plan.direction.mirror ? textSafeArea.right - badge : textSafeArea.left
+    const badgeX = plan.direction.mirror ? textSafeArea.right - badge : text.left
     context.fillStyle = preset.palette.accent
-    context.fillRect(badgeX, panelTop - badge / 2, badge, badge)
+    context.fillRect(badgeX, edge.top - badge / 2, badge, badge)
     context.font = `${preset.display.weight} 56px ${preset.display.family}`
     context.textBaseline = 'top'
     context.fillStyle = preset.palette.accentInk
-    context.fillText(String(index + 1).padStart(2, '0'), badgeX + 22, panelTop - badge / 2 + 24)
-    kickerLabel(context, preset, 'keep this', frame.x, panelTop + 76, { color: 'rgba(0,0,0,0.5)' })
-    kickerLabel(context, preset, `takeaway · ${String(index + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`, textSafeArea.right, panelTop + 76, { color: 'rgba(0,0,0,0.45)', align: 'right' })
+    context.fillText(String(index + 1).padStart(2, '0'), badgeX + 22, edge.top - badge / 2 + 24)
+    kickerLabel(context, preset, 'keep this', text.left, edge.top + 76, { color: 'rgba(0,0,0,0.5)' })
+    kickerLabel(context, preset, `takeaway · ${String(index + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`, textSafeArea.right, edge.top + 76, { color: 'rgba(0,0,0,0.45)', align: 'right' })
     paintTextBlock(context, plan, preset.palette.ink)
     context.fillStyle = 'rgba(0, 0, 0, 0.2)'
-    context.fillRect(frame.x, Math.min(plan.blockBottom + 40, textSafeArea.bottom + 40), frame.maxWidth, 3)
+    context.fillRect(text.left, Math.min(plan.blockBottom + 40, textSafeArea.bottom + 40), frame.maxWidth, 3)
   },
 
   'cta-stamp': (context, plan) => {
-    const { preset, frame, total } = plan
+    const { preset, total } = plan
+    const { text } = plan.composite
+    // The stamp chip, bookmark glyph, and series footer are centred on the
+    // composite rather than on the static frame, so the whole card travels
+    // together when the copy is nudged sideways.
+    const centerX = Math.round((text.left + text.right) / 2)
     context.fillStyle = `rgba(10, 10, 12, ${Math.min(0.85, 0.56 * preset.scrimBoost).toFixed(3)})`
     context.fillRect(0, 0, canvasSpec.width, canvasSpec.height)
     context.strokeStyle = 'rgba(255, 255, 255, 0.9)'
@@ -447,7 +446,7 @@ const painters = {
     context.lineWidth = 8
     context.strokeRect(76, 76, canvasSpec.width - 152, canvasSpec.height - 152)
     context.save()
-    context.translate(frame.x, plan.blockTop - 120)
+    context.translate(centerX, plan.blockTop - 120)
     context.rotate((-6 * Math.PI) / 180)
     context.fillStyle = preset.palette.accent
     context.fillRect(-170, -44, 340, 88)
@@ -460,14 +459,14 @@ const painters = {
     paintTextBlock(context, plan, '#ffffff')
     context.fillStyle = preset.palette.accent
     context.beginPath()
-    context.moveTo(frame.x - 26, plan.blockBottom + 54)
-    context.lineTo(frame.x + 26, plan.blockBottom + 54)
-    context.lineTo(frame.x + 26, plan.blockBottom + 130)
-    context.lineTo(frame.x, plan.blockBottom + 102)
-    context.lineTo(frame.x - 26, plan.blockBottom + 130)
+    context.moveTo(centerX - 26, plan.blockBottom + 54)
+    context.lineTo(centerX + 26, plan.blockBottom + 54)
+    context.lineTo(centerX + 26, plan.blockBottom + 130)
+    context.lineTo(centerX, plan.blockBottom + 102)
+    context.lineTo(centerX - 26, plan.blockBottom + 130)
     context.closePath()
     context.fill()
-    kickerLabel(context, preset, `part ${String(total).padStart(2, '0')} of ${String(total).padStart(2, '0')} · follow for the next one`, frame.x, textSafeArea.bottom - 30, { color: 'rgba(255,255,255,0.72)', align: 'center' })
+    kickerLabel(context, preset, `part ${String(total).padStart(2, '0')} of ${String(total).padStart(2, '0')} · follow for the next one`, centerX, textSafeArea.bottom - 30, { color: 'rgba(255,255,255,0.72)', align: 'center' })
   },
 }
 
