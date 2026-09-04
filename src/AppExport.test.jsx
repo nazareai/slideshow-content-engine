@@ -132,6 +132,39 @@ describe('export package readiness and download', () => {
     expect(panel.textContent).not.toContain('Reviewed and approved')
   }, 20000)
 
+  it('recovers from a blank source after approval without regeneration and exports the corrected source', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) })))
+    await useGatePassingBrief()
+    await act(async () => setFieldValue(document.querySelector('#source'), '   '))
+    await act(async () => findButton('Generate local fallback').click())
+    await generateAllFrames()
+    await approveAllFrames()
+    const calls = fetch.mock.calls.length
+    expect(exportButton().disabled).toBe(true)
+    expect(blockerPanel().textContent).toContain('Source URL or note')
+    expect(blockerPanel().textContent).toContain('Studio')
+
+    await act(async () => setFieldValue(document.querySelector('#source'), 'Personal experiment log'))
+    expect(blockerPanel()).toBeNull()
+    expect(exportButton().disabled).toBe(false)
+    expect(checkboxes().every(box => box.checked)).toBe(true)
+    expect(fetch.mock.calls.length).toBe(calls)
+    await act(async () => exportButton().click())
+    for (let attempt = 0; attempt < 40 && !downloads.length; attempt += 1) await flush()
+    expect(downloads).toEqual(['slideshow-upload-package.zip'])
+    const zip = await JSZip.loadAsync(await blobBytes(createdBlobs.at(-1)))
+    expect(await zip.file('slideshow-package.md').async('string')).toContain('Source: Personal experiment log')
+
+    await act(async () => setFieldValue(document.querySelector('#source'), ''))
+    expect(exportButton().disabled).toBe(true)
+    expect(blockerPanel().textContent).not.toContain('Draft matches current brief')
+    await act(async () => setFieldValue(document.querySelector('#source'), 'Corrected source note'))
+    expect(exportButton().disabled).toBe(false)
+    await act(async () => setFieldValue(document.querySelector('#topic'), 'A changed topic'))
+    expect(exportButton().disabled).toBe(true)
+    expect(blockerPanel().textContent).toContain('Draft matches current brief')
+  }, 20000)
+
   it('lists missing frames and the failing gate check before anything was generated', () => {
     expect(exportButton().disabled).toBe(true)
     const panel = blockerPanel()

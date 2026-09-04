@@ -74,7 +74,7 @@ function App() {
   const [reviewedSlides, setReviewedSlides] = useState({})
   const imageAbortRef = useRef(null)
   const imageStyle = useMemo(() => resolveImageStyle({ mediumId: imageMediumId, treatmentId: imageTreatmentId }), [imageMediumId, imageTreatmentId])
-  const briefKey = JSON.stringify({ topic, audience, angle, observation, source, slideCount })
+  const briefKey = JSON.stringify({ topic, audience, angle, observation, slideCount })
   const [generatedBriefKey, setGeneratedBriefKey] = useState(briefKey)
   const stale = briefKey !== generatedBriefKey
   const project = useMemo(() => ({ title: angle || topic, audience, observation, source, slides, caption, stale, imageStyle }), [angle, topic, audience, observation, source, slides, caption, stale, imageStyle])
@@ -106,7 +106,7 @@ function App() {
       setCaption(story.caption)
       setImages({})
       setReviewedSlides({})
-      setGeneratedBriefKey(JSON.stringify({ topic, audience, angle: story.selectedHook, observation, source, slideCount }))
+      setGeneratedBriefKey(JSON.stringify({ topic, audience, angle: story.selectedHook, observation, slideCount }))
       setNotice(`Story generated with ${textModel}. Best hook selected from ${story.hooks.length} candidates. Review it, then generate composed images.`)
     } catch (error) {
       setNotice(error.message || 'Text generation failed. The existing draft was kept.')

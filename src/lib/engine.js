@@ -95,7 +95,9 @@ export function computeExportReadiness({ slides = [], gate, images = {}, reviewe
   const gateFailures = gate && gate.passed !== true ? [...(gate.failures?.length ? gate.failures : ['The quality gate did not pass.'])] : []
   const label = (ids) => `Slide${ids.length === 1 ? '' : 's'} ${ids.join(', ')}`
   const blockers = [
-    ...gateFailures.map((failure) => `Quality gate: ${failure} — see the Quality gate tab.`),
+    ...gateFailures.map((failure) => failure === 'Research source is present'
+      ? 'Quality gate: Research source is present. Fill in "Source URL or note" in the Studio tab with a real source URL or a truthful note.'
+      : `Quality gate: ${failure} — see the Quality gate tab.`),
     ...(missingSlides.length ? [`${label(missingSlides)}: no finished frame yet — generate finished slides (image + text) first.`] : []),
     ...(staleSlides.length ? [`${label(staleSlides)}: the copy, visual direction, image style, or design preset changed after the last render — regenerate or re-render before export.`] : []),
     ...(unapprovedSlides.length ? [`${label(unapprovedSlides)}: check “Reviewed and approved” under the finished frame.`] : []),
