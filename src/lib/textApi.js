@@ -1,4 +1,5 @@
 import { LAYOUT_IDS, LAYOUTS, planDirections } from './artDirection'
+import { storySceneBrief } from './imageStyles'
 
 const TEXT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'
 export const DEFAULT_TEXT_MODEL = 'openai/gpt-5.6-luna'
@@ -76,7 +77,7 @@ export function parseStoryResponse(result, slideCount) {
   }
 }
 
-export async function generateStory({ apiKey, model = DEFAULT_TEXT_MODEL, topic, audience, angle, observation, source, slideCount = 5, fetchImpl = fetch, timeoutMs = 90000 }) {
+export async function generateStory({ apiKey, model = DEFAULT_TEXT_MODEL, topic, audience, angle, observation, source, slideCount = 5, imageStyle, fetchImpl = fetch, timeoutMs = 90000 }) {
   if (!clean(apiKey)) throw new Error('Add your OpenRouter API key before generating text.')
   if (!clean(model)) throw new Error('Add an OpenRouter text model.')
 
@@ -98,7 +99,7 @@ export async function generateStory({ apiKey, model = DEFAULT_TEXT_MODEL, topic,
       messages: [
         {
           role: 'system',
-          content: `You write evidence-grounded TikTok slideshow stories and art-direct every frame. Generate distinct hooks, score them for curiosity, specificity, credibility, and visual potential, select the strongest, and write exactly ${slideCount} frames. Each frame must contain one idea, no paragraph, normally 4-16 words, and create a reason to swipe. Use a Hook, Context, Tension, Evidence, Shift, Payoff, CTA arc as space permits. Never invent facts beyond the supplied observation. Every visual direction must describe one concrete photorealistic vertical scene with negative space for an overlay. Per frame also return art-direction metadata: "layout" chosen from ${LAYOUT_IDS.join(', ')} to match the frame's narrative job (${LAYOUT_IDS.map((id) => `${id} = ${LAYOUTS[id].role}`).join(', ')}); "emphasis" — the single most loaded word copied verbatim from that frame's text; "focalPoint" — where the described scene's subject sits in the 9:16 frame as {x, y} fractions from top-left, so the overlay can avoid it. Vary layouts across the sequence; never use the same layout twice in a row. Return only schema-valid JSON.`,
+          content: `You write evidence-grounded TikTok slideshow stories and art-direct every frame. Generate distinct hooks, score them for curiosity, specificity, credibility, and visual potential, select the strongest, and write exactly ${slideCount} frames. Each frame must contain one idea, no paragraph, normally 4-16 words, and create a reason to swipe. Use a Hook, Context, Tension, Evidence, Shift, Payoff, CTA arc as space permits. Never invent facts beyond the supplied observation. ${storySceneBrief(imageStyle)} Per frame also return art-direction metadata: "layout" chosen from ${LAYOUT_IDS.join(', ')} to match the frame's narrative job (${LAYOUT_IDS.map((id) => `${id} = ${LAYOUTS[id].role}`).join(', ')}); "emphasis" — the single most loaded word copied verbatim from that frame's text; "focalPoint" — where the described scene's subject sits in the 9:16 frame as {x, y} fractions from top-left, so the overlay can avoid it. Vary layouts across the sequence; never use the same layout twice in a row. Return only schema-valid JSON.`,
         },
         {
           role: 'user',

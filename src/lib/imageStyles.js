@@ -213,6 +213,25 @@ export function styleDirective(style, customText = '') {
   return `${resolved.name} image style — Medium: ${d.medium} Subject treatment: ${d.subject} Scene: ${d.scene} Composition: ${d.composition} Texture: ${d.texture} Palette: ${d.palette} Avoid: ${d.negative}`
 }
 
+// The story model writes each slide's visual direction before any image prompt
+// exists, so the selected style must be authoritative at that layer too: a
+// global photorealistic default there would seed illustrated and meme-native
+// series with camera language the image model then faithfully obeys.
+export function storySceneBrief(selection = DEFAULT_IMAGE_STYLE_ID) {
+  const style = resolveImageStyle(selection)
+  const fixed = getImageStyle(style.id)
+  const base = 'Every visual direction must describe one concrete vertical scene in the selected image medium, with clear negative space for a text overlay.'
+  if (fixed.editable) {
+    return `${base} ${style.directive} This custom direction is authoritative: describe every scene in its medium and vocabulary alone, and only use real-camera photography language if the direction itself asks for it.`
+  }
+  const d = fixed.directive
+  const grammar = `Selected image style — ${style.name}. Medium: ${d.medium} Subject treatment: ${d.subject}`
+  if (fixed.group === 'capture') {
+    return `${base} ${grammar} These frames are real photography: describe physically plausible, concrete photorealistic moments a camera could capture, in exactly that language.`
+  }
+  return `${base} ${grammar} Write every scene as native to that medium — name its materials, forms, and staging — and never describe a scene as a real photograph or use camera vocabulary the medium itself does not call for.`
+}
+
 // Normalize any selection shape ({ styleId, customText }, a resolved style, or
 // a bare id string) into the object the app state, prompts, and export
 // manifest share. Idempotent: resolveImageStyle(resolveImageStyle(x)) is x.

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_TEXT_MODEL, generateStory, parseStoryResponse } from './textApi'
+import { IMAGE_STYLES } from './imageStyles'
 
 const validStory = {
   hooks: [
@@ -106,5 +107,52 @@ describe('OpenRouter text generation', () => {
     const fetchImpl = vi.fn()
     await expect(generateStory({ apiKey: '', model: DEFAULT_TEXT_MODEL, slideCount: 6, fetchImpl })).rejects.toThrow('API key')
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})
+
+describe('image style is authoritative in the story request body', () => {
+  const styleById = (id) => IMAGE_STYLES.find((style) => style.id === id)
+  // Sends a real generateStory call through a mocked fetch and returns the
+  // system prompt exactly as it left for OpenRouter.
+  const sentSystemPrompt = async (imageStyle) => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(validStory) } }] }) })
+    await generateStory({ apiKey: 'test-key', topic: 'content automation', audience: 'founders', angle: 'x', observation: 'o', source: 's', slideCount: 6, imageStyle, fetchImpl })
+    return JSON.parse(fetchImpl.mock.calls[0][1].body).messages[0].content
+  }
+
+  it('briefs Luna in each illustrated and meme medium with zero photorealistic default', async () => {
+    for (const id of ['surreal-brainrot', 'cartoon-pop', 'clay-toy-3d', 'retro-pixel']) {
+      const style = styleById(id)
+      const sys = await sentSystemPrompt(id)
+      expect(sys, id).toContain(style.directive.medium)
+      expect(sys, id).toContain(style.directive.subject)
+      expect(sys, id).not.toContain('concrete photorealistic vertical scene')
+      expect(sys, id).not.toMatch(/photorealistic/i)
+      expect(sys, id).toContain('never describe a scene as a real photograph')
+    }
+  })
+
+  it('keeps capture styles fully photographic through their own medium', async () => {
+    expect(await sentSystemPrompt('creator-candid')).toContain('smartphone main camera')
+    expect(await sentSystemPrompt('direct-flash')).toContain('hard on-camera flash')
+    const cinematic = await sentSystemPrompt('cinematic')
+    expect(cinematic).toContain('photorealistic film still')
+    expect(cinematic).toContain('These frames are real photography')
+  })
+
+  it('defaults to the capture default style when no image style is supplied', async () => {
+    const sys = await sentSystemPrompt(undefined)
+    expect(sys).toContain('smartphone main camera')
+    expect(sys).toContain('These frames are real photography')
+  })
+
+  it('lets a custom style drive the medium verbatim — photography only if the user wrote it', async () => {
+    const embroidered = await sentSystemPrompt({ styleId: 'custom', customText: 'everything embroidered in thick thread on stretched linen' })
+    expect(embroidered).toContain('everything embroidered in thick thread on stretched linen')
+    expect(embroidered).not.toMatch(/photorealistic/i)
+    expect(embroidered).toContain('only use real-camera photography language if the direction itself asks for it')
+
+    const filmic = await sentSystemPrompt({ styleId: 'custom', customText: 'grainy 35mm street photography, harsh daylight' })
+    expect(filmic).toContain('grainy 35mm street photography, harsh daylight')
   })
 })

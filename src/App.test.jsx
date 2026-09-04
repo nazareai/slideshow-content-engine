@@ -108,6 +108,39 @@ describe('image style selection in the app', () => {
     expect(body.prompt).not.toContain('Create one photorealistic vertical photograph')
   })
 
+  it('sends the selected style medium inside the actual story request, replacing the photorealistic default', async () => {
+    const hooks = Array.from({ length: 5 }, (_, index) => ({ text: `Hook candidate number ${index} for this story`, score: 60 + index }))
+    const storyResponse = {
+      hooks,
+      selectedHook: hooks[4].text,
+      slides: [
+        { role: 'Hook', text: 'The dashboard sprite finally stopped blinking', visual: 'A pixel-sprite founder frozen before a dark tiled dashboard wall', layout: 'impact-stack', emphasis: 'blinking', focalPoint: { x: 0.5, y: 0.6 } },
+        { role: 'Context', text: 'Every level shipped exactly on schedule', visual: 'A conveyor of identical pixel crates rolling across a platform', layout: 'editorial-split', emphasis: 'schedule', focalPoint: { x: 0.5, y: 0.35 } },
+        { role: 'Tension', text: 'No player ever saved the game', visual: 'An untouched glowing save-point orb in an empty pixel corridor', layout: 'tension-rail', emphasis: 'saved', focalPoint: { x: 0.7, y: 0.4 } },
+        { role: 'Shift', text: 'So the sprite rebuilt one single level', visual: 'The founder sprite placing one glowing tile with care', layout: 'spotlight-reveal', emphasis: 'single', focalPoint: { x: 0.5, y: 0.3 } },
+        { role: 'Payoff', text: 'One earned level beats ten empty worlds', visual: 'A small finished pixel level shining under an indigo sky', layout: 'takeaway-ledger', emphasis: 'earned', focalPoint: { x: 0.5, y: 0.3 } },
+      ],
+      caption: 'Ship one level players actually save.',
+    }
+    const fetchSpy = vi.fn(async (url) => url.includes('/chat/completions')
+      ? { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(storyResponse) } }] }) }
+      : { ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await act(async () => byRole(imageStyleGroup(), 'Retro Pixel').click())
+    await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
+    const storyButton = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Generate AI hooks + story'))
+    await act(async () => storyButton.click())
+    await flush()
+
+    const storyCall = fetchSpy.mock.calls.find(([url]) => url.includes('/chat/completions'))
+    expect(storyCall).toBeTruthy()
+    const systemPrompt = JSON.parse(storyCall[1].body).messages[0].content
+    expect(systemPrompt).toContain('Chunky low-resolution pixel art')
+    expect(systemPrompt).not.toMatch(/photorealistic/i)
+    expect(systemPrompt).not.toContain('concrete photorealistic vertical scene')
+  })
+
   it('exposes an editable Custom direction and uses it in generation prompts', async () => {
     const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) }))
     vi.stubGlobal('fetch', fetchSpy)

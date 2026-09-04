@@ -76,7 +76,7 @@ function App() {
     setGeneratingText(true)
     setNotice(`Generating hooks and a complete story with ${textModel}…`)
     try {
-      const story = await generateStory({ apiKey, model: textModel, topic, audience, angle, observation, source, slideCount })
+      const story = await generateStory({ apiKey, model: textModel, topic, audience, angle, observation, source, slideCount, imageStyle })
       setAngle(story.selectedHook)
       setSlides(story.slides)
       setCaption(story.caption)
@@ -153,8 +153,8 @@ function App() {
     const hasFrames = slides.some((slide) => images[slide.id]?.dataUrl)
     const name = getImageStyle(styleId).name
     setNotice(hasFrames
-      ? `Image style set to ${name}. Existing frames keep their previous style — regenerate images to apply it. Export stays blocked until every frame matches the selected style.`
-      : `Image style set to ${name}. It will shape every image prompt when you generate.`)
+      ? `Image style set to ${name}. Existing frames and visual directions keep the previous style — regenerate the AI story and images to apply it. Export stays blocked until every frame matches the selected style.`
+      : `Image style set to ${name}. It will shape the story's visual directions and every image prompt when you generate.`)
   }
 
   async function generateImages() {
@@ -298,7 +298,7 @@ function App() {
                 <div className="mb-5 rounded-xl border border-black/10 bg-white p-4">
                   <div className="mb-3">
                     <span className="label mb-0" id="image-style-title">Image generation style</span>
-                    <p className="text-xs text-black/55">Choose the visual world before generating — it is written into every image prompt. This is separate from the slide design preset below, which only styles the text overlay.</p>
+                    <p className="text-xs text-black/55">Choose the visual world before generating — it is written into the story's visual directions and every image prompt. This is separate from the slide design preset below, which only styles the text overlay.</p>
                   </div>
                   <div role="radiogroup" aria-labelledby="image-style-title" aria-label="Image generation style">
                     {IMAGE_STYLE_GROUPS.map((group) => (

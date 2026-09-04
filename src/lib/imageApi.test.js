@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buildImagePrompt, buildVisualBible, generateImage, imageExtension, parseImageResponse } from './imageApi'
 import { IMAGE_STYLES, resolveImageStyle } from './imageStyles'
+import { parseStoryResponse } from './textApi'
 
 describe('OpenRouter image generation', () => {
   it('builds a 9:16 prompt without asking the model for text', () => {
@@ -135,5 +136,82 @@ describe('image style directives in prompts', () => {
     const prompt = buildImagePrompt(slide, project)
     expect(prompt).toContain('Creator Candid image style')
     expect(prompt).not.toMatch(/professional/i)
+  })
+})
+
+// Regression guard for the authoritative-medium fix: assertions run against the
+// request body actually posted to the Muse endpoint, not an intermediate string.
+describe('final Muse request body is style-authoritative', () => {
+  const project = { topic: 'content quality', audience: 'solo founders' }
+  // The only photography wording buildImagePrompt itself contributes is this
+  // protective negation; everything else must come from the style directive.
+  const MEDIUM_GUARD = 'do not fall back to generic photography'
+  const photographyLanguage = /photograph|photoreal|camera|lens\b|bokeh|dslr|f\/\d/i
+
+  const sentMusePrompt = async (styleSelection, visual) => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) })
+    const prompt = buildImagePrompt({ role: 'Hook', visual }, project, undefined, styleSelection)
+    await generateImage({ apiKey: 'test-key', prompt, fetchImpl })
+    return JSON.parse(fetchImpl.mock.calls[0][1].body).prompt
+  }
+  const outsideStyleDirective = (body, styleSelection) =>
+    body.split(resolveImageStyle(styleSelection).directive).join(' ').split(MEDIUM_GUARD).join(' ')
+
+  it('sends Surreal Brainrot, Cartoon Pop, Clay & Toy 3D, and Retro Pixel payloads free of global photography language', async () => {
+    const mediumNativeVisuals = {
+      'surreal-brainrot': 'A towering sneaker-toad hybrid mascot looming over a supermarket parking lot shrine',
+      'cartoon-pop': 'A cel-shaded founder character slumped over a giant flatlining chart counter',
+      'clay-toy-3d': 'A clay founder figurine at a tiny felt desk buried in miniature paper stacks',
+      'retro-pixel': 'A pixel-sprite founder pausing on a tiled platform under an indigo dithered sky',
+    }
+    for (const [id, visual] of Object.entries(mediumNativeVisuals)) {
+      const style = IMAGE_STYLES.find((entry) => entry.id === id)
+      const body = await sentMusePrompt(id, visual)
+      expect(body, id).toContain(style.directive.medium)
+      expect(body, id).not.toContain('Create one photorealistic vertical photograph')
+      expect(body, id).not.toContain('concrete photorealistic vertical scene')
+      expect(outsideStyleDirective(body, id), id).not.toMatch(photographyLanguage)
+    }
+  })
+
+  it('sends capture payloads that stay photographic via their own medium', async () => {
+    expect(await sentMusePrompt('creator-candid', 'A founder at a cluttered desk at night')).toContain('smartphone main camera')
+    expect(await sentMusePrompt('direct-flash', 'A founder caught mid-turn in a dark hallway')).toContain('hard on-camera flash')
+    expect(await sentMusePrompt('cinematic', 'A founder silhouetted against a rain-streaked window')).toContain('photorealistic film still')
+  })
+
+  it('lets a custom style put photography language in the payload only because the user asked for it', async () => {
+    const body = await sentMusePrompt({ styleId: 'custom', customText: 'grainy 35mm street photography, harsh daylight' }, 'A founder crossing an empty intersection')
+    expect(body).toContain('grainy 35mm street photography, harsh daylight')
+  })
+
+  it('carries story visual directions through to Muse payloads with zero global photography leakage (full pipeline)', async () => {
+    const hooks = Array.from({ length: 5 }, (_, index) => ({ text: `Hook candidate number ${index} for the saga`, score: 60 + index }))
+    const story = parseStoryResponse({ choices: [{ message: { content: JSON.stringify({
+      hooks,
+      selectedHook: hooks[4].text,
+      slides: [
+        { role: 'Hook', text: 'The parking lot chose its own legendary guardian', visual: 'A giant sneaker-toad hybrid mascot towering over a supermarket parking lot shrine', layout: 'impact-stack', emphasis: 'guardian', focalPoint: { x: 0.5, y: 0.6 } },
+        { role: 'Context', text: 'Every visitor left an offering at dawn', visual: 'Rows of tiny glowing offerings stacked before the melted-render mascot', layout: 'editorial-split', emphasis: 'offering', focalPoint: { x: 0.5, y: 0.35 } },
+        { role: 'Tension', text: 'Then the shrine went completely silent', visual: 'The empty shrine arena under a clipped radioactive-green sky', layout: 'tension-rail', emphasis: 'silent', focalPoint: { x: 0.7, y: 0.4 } },
+        { role: 'Shift', text: 'The guardian had simply changed arenas', visual: 'The hybrid mascot posed tiny on a dinner plate in a classroom', layout: 'spotlight-reveal', emphasis: 'arenas', focalPoint: { x: 0.5, y: 0.3 } },
+        { role: 'Payoff', text: 'The lore was fake, the lesson was real', visual: 'Awed onlookers bowing before the deadpan mascot in a bathroom arena', layout: 'takeaway-ledger', emphasis: 'lesson', focalPoint: { x: 0.5, y: 0.3 } },
+      ],
+      caption: 'Fake lore, real lesson.',
+    }) } }] }, 5)
+
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) })
+    const bible = buildVisualBible(project, 'surreal-brainrot')
+    for (const storySlide of story.slides) {
+      const prompt = buildImagePrompt(storySlide, project, bible, 'surreal-brainrot')
+      await generateImage({ apiKey: 'test-key', prompt, fetchImpl })
+    }
+
+    expect(fetchImpl).toHaveBeenCalledTimes(5)
+    for (const [, request] of fetchImpl.mock.calls) {
+      const body = JSON.parse(request.body).prompt
+      expect(body).toContain(IMAGE_STYLES.find((entry) => entry.id === 'surreal-brainrot').directive.medium)
+      expect(outsideStyleDirective(body, 'surreal-brainrot')).not.toMatch(photographyLanguage)
+    }
   })
 })
