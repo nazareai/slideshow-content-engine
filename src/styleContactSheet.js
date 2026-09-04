@@ -299,10 +299,17 @@ const painters = {
     context.beginPath(); context.moveTo(190, 1150); context.quadraticCurveTo(150, 950, 220, 830); context.stroke()
     context.fillStyle = '#74b96a'
     for (const [leafX, leafY] of [[160, 900], [250, 840], [205, 760]]) { context.beginPath(); context.ellipse(leafX, leafY, 46, 26, 0.5, 0, Math.PI * 2); context.fill() }
-    context.fillStyle = '#ff8fab' // squishy clay hero, centered in the upper-middle band
+    context.save()
+    context.shadowColor = 'rgba(92,45,35,0.48)'; context.shadowBlur = 48; context.shadowOffsetY = 38
+    const clayBody = context.createRadialGradient(455, 745, 22, 540, 880, 310)
+    clayBody.addColorStop(0, '#ffd1dc'); clayBody.addColorStop(0.38, '#ff8fab'); clayBody.addColorStop(1, '#b92f64')
+    context.fillStyle = clayBody // unmistakably modeled squishy clay volume
     context.beginPath(); context.ellipse(540, 860, 235, 270, 0, 0, Math.PI * 2); context.fill()
-    context.fillStyle = '#ffb7c9'
-    context.beginPath(); context.ellipse(475, 760, 100, 120, -0.3, 0, Math.PI * 2); context.fill() // soft clay highlight
+    context.restore()
+    context.strokeStyle = 'rgba(120,45,70,0.4)'; context.lineWidth = 8
+    context.beginPath(); context.arc(540, 1114, 130, 0.08 * Math.PI, 0.92 * Math.PI); context.stroke() // tabletop contact seam
+    context.fillStyle = 'rgba(255,235,241,0.78)'
+    context.beginPath(); context.ellipse(470, 745, 72, 106, -0.35, 0, Math.PI * 2); context.fill() // dimensional specular highlight
     context.fillStyle = '#5c4033'
     context.beginPath(); context.arc(475, 840, 28, 0, Math.PI * 2); context.fill()
     context.beginPath(); context.arc(615, 840, 28, 0, Math.PI * 2); context.fill()
@@ -371,7 +378,19 @@ const painters = {
     for (let onlooker = 0; onlooker < 9; onlooker += 1) { // awed onlookers imply the lore
       context.beginPath(); context.arc(90 + onlooker * 110, 1850, 16, 0, Math.PI * 2); context.fill()
     }
-    jpegBlocks(context, random, 0.2, 28) // screenshot-of-a-screenshot rot
+    // Deliberately non-pixel corruption: RGB channel ghosts, fake subtitles,
+    // oversharpened rings, and screenshot UI fragments distinguish brainrot
+    // from the strict low-resolution grid of Retro Pixel Art.
+    context.globalCompositeOperation = 'screen'
+    context.fillStyle = 'rgba(255,0,90,0.28)'; context.beginPath(); context.ellipse(516, 1220, 240, 520, 0.1, 0, Math.PI * 2); context.fill()
+    context.fillStyle = 'rgba(0,240,255,0.24)'; context.beginPath(); context.ellipse(566, 1220, 240, 520, 0.1, 0, Math.PI * 2); context.fill()
+    context.globalCompositeOperation = 'source-over'
+    context.strokeStyle = '#fff'; context.lineWidth = 12
+    context.beginPath(); context.arc(540, 1180, 360, 0, Math.PI * 2); context.stroke()
+    context.font = '900 74px Impact, sans-serif'; context.textAlign = 'center'; context.fillStyle = '#fff'; context.strokeStyle = '#000'; context.lineWidth = 18
+    context.strokeText('LORE LEVEL 999', 540, 1510); context.fillText('LORE LEVEL 999', 540, 1510)
+    context.fillStyle = 'rgba(0,0,0,0.72)'; context.fillRect(760, 520, 250, 86)
+    context.font = '700 34px Arial'; context.fillStyle = '#fff'; context.fillText('LIVE  9.8K', 885, 576)
   },
   'deep-fried': (context, random) => {
     const base = context.createLinearGradient(0, 0, 0, 1920)
@@ -503,7 +522,7 @@ async function run() {
     await img.decode()
   }
 
-  status.textContent = `Done: ${fixedStyles.length} styles rendered through the production compositor (makeSlides → composeSlide → composeContactSheet).`
+  status.textContent = `Done: all ${DETAIL_STYLE_IDS.length} named cartoon families are visible below. Production compositor: makeSlides → composeSlide.`
   document.title = 'style-sheet-ready'
 }
 
