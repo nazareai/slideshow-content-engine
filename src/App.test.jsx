@@ -39,16 +39,37 @@ describe('image style selection in the app', () => {
     vi.unstubAllGlobals()
   })
 
-  it('offers all eight image styles as a control separate from the slide design preset', () => {
+  it('offers the full TikTok-native taxonomy as a control separate from the slide design preset', () => {
     const styleGroup = imageStyleGroup()
     const designGroup = designPresetGroup()
     expect(styleGroup).toBeTruthy()
     expect(designGroup).toBeTruthy()
     expect(styleGroup).not.toBe(designGroup)
-    const styleNames = ['Creator Candid', 'Cinematic', 'Flash Editorial', 'Documentary', 'Y2K Internet', 'Luxury Minimal', 'Surreal Meme', 'Custom']
-    expect(styleGroup.querySelectorAll('[role="radio"]')).toHaveLength(8)
+    const styleNames = [
+      'Creator Candid', 'Direct Flash', 'Cinematic',
+      'Cartoon Pop', 'Clay & Toy 3D', 'Retro Pixel',
+      'Surreal Brainrot', 'Deep-Fried Meme', 'Cursed Collage', 'Y2K Web Chaos',
+      'Custom',
+    ]
+    expect(styleGroup.querySelectorAll('[role="radio"]')).toHaveLength(11)
     styleNames.forEach((name) => expect(byRole(styleGroup, name), name).toBeTruthy())
     expect(styleGroup.textContent).not.toMatch(/professional/i)
+  })
+
+  it('shows the choices grouped by category, each with a visual swatch and a description', () => {
+    const styleGroup = imageStyleGroup()
+    for (const groupId of ['capture', 'illustrated', 'meme', 'custom']) {
+      expect(styleGroup.querySelector(`[data-style-group="${groupId}"]`), groupId).toBeTruthy()
+    }
+    expect(styleGroup.textContent).toContain('Capture')
+    expect(styleGroup.textContent).toContain('Illustration & transformation')
+    expect(styleGroup.textContent).toContain('Meme-native')
+    for (const radio of styleGroup.querySelectorAll('[role="radio"]')) {
+      const swatch = radio.querySelector('span[aria-hidden="true"]')
+      expect(swatch, radio.textContent).toBeTruthy()
+      expect(swatch.getAttribute('style')).toContain('linear-gradient')
+      expect(radio.querySelectorAll('p')[1].textContent.length).toBeGreaterThan(20)
+    }
   })
 
   it('places the image style selector before the image generation control', () => {
@@ -59,20 +80,20 @@ describe('image style selection in the app', () => {
   })
 
   it('keeps image style and slide design preset selections independent', async () => {
-    await act(async () => byRole(imageStyleGroup(), 'Y2K Internet').click())
-    expect(byRole(imageStyleGroup(), 'Y2K Internet').getAttribute('aria-checked')).toBe('true')
+    await act(async () => byRole(imageStyleGroup(), 'Cartoon Pop').click())
+    expect(byRole(imageStyleGroup(), 'Cartoon Pop').getAttribute('aria-checked')).toBe('true')
     expect(byRole(designPresetGroup(), 'Bold Impact').getAttribute('aria-checked')).toBe('true')
 
     await act(async () => byRole(designPresetGroup(), 'Zine Punch').click())
     expect(byRole(designPresetGroup(), 'Zine Punch').getAttribute('aria-checked')).toBe('true')
-    expect(byRole(imageStyleGroup(), 'Y2K Internet').getAttribute('aria-checked')).toBe('true')
+    expect(byRole(imageStyleGroup(), 'Cartoon Pop').getAttribute('aria-checked')).toBe('true')
   })
 
   it('sends the style selected before generation inside the actual image request', async () => {
     const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) }))
     vi.stubGlobal('fetch', fetchSpy)
 
-    await act(async () => byRole(imageStyleGroup(), 'Y2K Internet').click())
+    await act(async () => byRole(imageStyleGroup(), 'Surreal Brainrot').click())
     await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
     await act(async () => generateButton().click())
     await flush()
@@ -81,9 +102,10 @@ describe('image style selection in the app', () => {
     const [url, request] = fetchSpy.mock.calls[0]
     expect(url).toBe('https://openrouter.ai/api/v1/images')
     const body = JSON.parse(request.body)
-    expect(body.prompt).toContain(resolveImageStyle('y2k-internet').directive)
+    expect(body.prompt).toContain(resolveImageStyle('surreal-brainrot').directive)
     expect(body.prompt).toContain('Aspect ratio 9:16')
     expect(body.prompt).toContain('text-safe negative space')
+    expect(body.prompt).not.toContain('Create one photorealistic vertical photograph')
   })
 
   it('exposes an editable Custom direction and uses it in generation prompts', async () => {

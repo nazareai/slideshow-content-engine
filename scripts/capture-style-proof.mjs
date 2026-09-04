@@ -110,8 +110,8 @@ try {
 
   await evaluate(cdp, `(() => {
     const group = document.querySelector('[role="radiogroup"][aria-label="Image generation style"]')
-    const y2k = [...group.querySelectorAll('[role="radio"]')].find((radio) => radio.textContent.includes('Y2K Internet'))
-    y2k.click()
+    const brainrot = [...group.querySelectorAll('[role="radio"]')].find((radio) => radio.textContent.includes('Surreal Brainrot'))
+    brainrot.click()
     return true
   })()`)
   await wait(300)

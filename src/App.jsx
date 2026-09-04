@@ -7,7 +7,7 @@ import { ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreId
 import { buildImagePrompt, buildVisualBible, DEFAULT_IMAGE_MODEL, generateImage } from './lib/imageApi'
 import { composeContactSheet, composeSlideDataUrl, loadImage } from './lib/compositor'
 import { DEFAULT_PRESET_ID, getPreset, STYLE_PRESETS } from './lib/artDirection'
-import { CUSTOM_STYLE_PLACEHOLDER, DEFAULT_IMAGE_STYLE_ID, getImageStyle, IMAGE_STYLES, resolveImageStyle } from './lib/imageStyles'
+import { CUSTOM_STYLE_PLACEHOLDER, DEFAULT_IMAGE_STYLE_ID, getImageStyle, IMAGE_STYLE_GROUPS, resolveImageStyle, stylesInGroup } from './lib/imageStyles'
 import { DEFAULT_TEXT_MODEL, generateStory } from './lib/textApi'
 
 const starterIdeas = [
@@ -298,16 +298,26 @@ function App() {
                 <div className="mb-5 rounded-xl border border-black/10 bg-white p-4">
                   <div className="mb-3">
                     <span className="label mb-0" id="image-style-title">Image generation style</span>
-                    <p className="text-xs text-black/55">Choose the photographic look before generating — it is written into every image prompt. This is separate from the slide design preset below, which only styles the text overlay.</p>
+                    <p className="text-xs text-black/55">Choose the visual world before generating — it is written into every image prompt. This is separate from the slide design preset below, which only styles the text overlay.</p>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="radiogroup" aria-labelledby="image-style-title" aria-label="Image generation style">
-                    {IMAGE_STYLES.map((style) => (
-                      <button key={style.id} role="radio" aria-checked={imageStyleId === style.id} onClick={() => changeImageStyle(style.id)} disabled={generatingImages || generatingText}
-                        className={cn('focus-ring rounded-lg border p-3 text-left transition-colors', imageStyleId === style.id ? 'border-cobalt bg-cobalt/5 ring-1 ring-cobalt' : 'border-black/15 hover:bg-black/5')}>
-                        <span aria-hidden="true" className="mb-2 block h-8 w-full rounded-md border border-black/10" style={{ background: `linear-gradient(120deg, ${style.swatch[0]} 0%, ${style.swatch[1]} 55%, ${style.swatch[2]} 100%)` }} />
-                        <p className="text-sm font-bold">{style.name}</p>
-                        <p className="mt-1 text-xs leading-5 text-black/55">{style.tagline}</p>
-                      </button>
+                  <div role="radiogroup" aria-labelledby="image-style-title" aria-label="Image generation style">
+                    {IMAGE_STYLE_GROUPS.map((group) => (
+                      <div key={group.id} className="mb-4 last:mb-0" data-style-group={group.id}>
+                        <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-black/70">{group.name}</p>
+                          <p className="text-xs text-black/45">{group.blurb}</p>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          {stylesInGroup(group.id).map((style) => (
+                            <button key={style.id} role="radio" aria-checked={imageStyleId === style.id} onClick={() => changeImageStyle(style.id)} disabled={generatingImages || generatingText}
+                              className={cn('focus-ring rounded-lg border p-3 text-left transition-colors', imageStyleId === style.id ? 'border-cobalt bg-cobalt/5 ring-1 ring-cobalt' : 'border-black/15 hover:bg-black/5')}>
+                              <span aria-hidden="true" className="mb-2 block h-8 w-full rounded-md border border-black/10" style={{ background: `linear-gradient(120deg, ${style.swatch[0]} 0%, ${style.swatch[1]} 55%, ${style.swatch[2]} 100%)` }} />
+                              <p className="text-sm font-bold">{style.name}</p>
+                              <p className="mt-1 text-xs leading-5 text-black/55">{style.tagline}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
                   {imageStyleId === 'custom' && (
@@ -317,7 +327,7 @@ function App() {
                     </div>
                   )}
                   <Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="mt-4 w-full">{generatingImages ? 'Generating + composing…' : `Generate finished slides: image + text (${imageStyle.name})`}</Button>
-                  <p className="mt-3 text-xs text-black/55">Each style rewrites the subject treatment, environment, lighting, camera and lens, texture and grade, and composition of the prompt while preserving 9:16 framing and text-safe negative space. Switching styles after generating marks frames stale until they are regenerated.</p>
+                  <p className="mt-3 text-xs text-black/55">Each style rewrites the medium, subject grammar, scene, composition, texture, palette, and negative constraints of the prompt while preserving 9:16 framing and text-safe negative space. Switching styles after generating marks frames stale until they are regenerated.</p>
                 </div>
                 <div className="mb-5 rounded-xl border border-black/10 bg-white p-4">
                   <div className="mb-3 flex items-center justify-between gap-3"><span className="label mb-0">Slide design preset</span><Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={() => recomposeOverlays()} disabled={generatingImages || generatingText || !slides.some((slide) => images[slide.id]?.dataUrl)}>Re-render overlays</Button></div>

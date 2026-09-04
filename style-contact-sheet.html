@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Image style taxonomy proof — contact sheet</title>
+    <style>
+      body { margin: 0; background: #0c0c0f; color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      main { padding: 24px; }
+      h1 { font-size: 24px; margin: 24px 0 14px; max-width: 1500px; }
+      p.note { color: rgba(255,255,255,0.6); font-size: 14px; margin: 0 0 20px; max-width: 1200px; }
+      section { margin-bottom: 34px; }
+      img.sheet { display: block; width: 1508px; height: auto; border: 1px solid rgba(255,255,255,0.15); }
+      .detail { display: grid; grid-template-columns: repeat(2, 540px); gap: 24px; }
+      .detail figure { margin: 0; }
+      .detail img { width: 540px; height: 960px; border: 1px solid rgba(255,255,255,0.15); }
+      .detail figcaption { width: 540px; font-size: 13px; line-height: 1.55; color: rgba(255,255,255,0.85); padding-top: 10px; }
+      .detail figcaption span { color: rgba(255,255,255,0.55); }
+      #status { font-size: 13px; color: #9be941; padding: 8px 0 20px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Image style taxonomy proof</h1>
+      <p class="note">Each tile is a deterministic mock base frame painted in one image style's visual mechanics (medium, palette, texture, composition), composited into a finished 1080×1920 slide by the production pipeline (makeSlides → composeSlide → composeContactSheet) with real overlay text in the text-safe zone. In the app these bases come from the image model; the style directive shown under each detail frame is the exact text injected into every prompt.</p>
+      <div id="status">Rendering…</div>
+      <div id="root"></div>
+    </main>
+    <script type="module" src="/src/styleContactSheet.js"></script>
+  </body>
+</html>

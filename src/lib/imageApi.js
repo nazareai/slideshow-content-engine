@@ -6,15 +6,19 @@ export const DEFAULT_IMAGE_MODEL = 'meta/muse-image'
 const clean = (value) => String(value ?? '').trim()
 
 // The visual bible is the per-series continuity contract embedded in every
-// frame's prompt. The selected image style supplies the entire look — subject
-// treatment, environment, lighting, camera, texture, composition.
+// frame's prompt. The selected image style supplies the entire look — medium,
+// subject grammar, scene, composition, texture, palette, and negatives.
 export function buildVisualBible(project = {}, styleSelection) {
   const subject = clean(project.topic) || clean(project.title) || 'the story subject'
   const audience = clean(project.audience) || 'a broad social audience'
   const style = resolveImageStyle(styleSelection)
-  return `Series continuity: one ${style.name}-styled vertical photo series about ${subject} for ${audience}. ${style.directive} Hold this exact treatment with consistent visual density and color grade across every frame.`
+  return `Series continuity: one ${style.name}-styled vertical slideshow series about ${subject} for ${audience}. ${style.directive} Hold this exact medium and treatment with consistent visual density and palette across every frame.`
 }
 
+// Style-specific negatives live inside each style directive ("Avoid: …"), so
+// the only universal bans here are the ones the compositor depends on — the
+// approved slide text is rendered locally, so the model must never letter the
+// image itself.
 export function buildImagePrompt(slide, project = {}, visualBible, styleSelection) {
   const subject = clean(project.topic) || clean(project.title) || 'the story subject'
   const audience = clean(project.audience) || 'a broad social audience'
@@ -22,15 +26,16 @@ export function buildImagePrompt(slide, project = {}, visualBible, styleSelectio
   const bible = visualBible || buildVisualBible(project, styleSelection)
 
   return [
-    'Create one photorealistic vertical photograph for a TikTok slideshow.',
+    'Create one full-bleed vertical frame for a TikTok slideshow.',
     `Story subject: ${subject}.`,
     `Audience context: ${audience}.`,
     `Frame purpose: ${clean(slide?.role)}.`,
     `Scene direction: ${direction}.`,
     bible,
-    'Aspect ratio 9:16, full-bleed vertical frame, one strong focal point, visual depth, and clear text-safe negative space left for a short text overlay in the upper-middle area.',
+    'Render the frame strictly in the medium the style directive defines — if the style is illustrated, rendered, or meme-native, do not fall back to generic photography.',
+    'Aspect ratio 9:16, full-bleed vertical frame, one strong focal point, and clear text-safe negative space left for a short text overlay in the upper-middle area.',
     'Keep the exact same styled treatment a complete slideshow series could use.',
-    'No typography, captions, logos, watermarks, interface mockups, split screens, collages, or generic stock-photo poses.',
+    'No typography, lettering, captions, subtitles, logos, watermarks, or brand marks anywhere in the image.',
   ].join(' ')
 }
 

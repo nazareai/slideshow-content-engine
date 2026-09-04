@@ -8,6 +8,7 @@ export default defineConfig({
       input: {
         main: 'index.html',
         contactSheet: 'contact-sheet.html',
+        styleContactSheet: 'style-contact-sheet.html',
       },
     },
   },

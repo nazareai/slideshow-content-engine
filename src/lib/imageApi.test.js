@@ -3,7 +3,7 @@ import { buildImagePrompt, buildVisualBible, generateImage, imageExtension, pars
 import { IMAGE_STYLES, resolveImageStyle } from './imageStyles'
 
 describe('OpenRouter image generation', () => {
-  it('builds a photographic 9:16 prompt without asking the model for text', () => {
+  it('builds a 9:16 prompt without asking the model for text', () => {
     const prompt = buildImagePrompt({ role: 'Hook', visual: 'A founder staring at a silent analytics dashboard at night' }, { topic: 'content quality', audience: 'solo founders' })
     expect(prompt).toContain('Aspect ratio 9:16')
     expect(prompt).toContain('A founder staring at a silent analytics dashboard at night')
@@ -14,7 +14,7 @@ describe('OpenRouter image generation', () => {
     const bible = buildVisualBible({ topic: 'content quality', audience: 'solo founders' })
     const first = buildImagePrompt({ role: 'Hook', visual: 'A founder at a laptop' }, { topic: 'content quality', audience: 'solo founders' }, bible)
     const second = buildImagePrompt({ role: 'Payoff', visual: 'A reviewed draft on a desk' }, { topic: 'content quality', audience: 'solo founders' }, bible)
-    expect(bible).toContain('consistent visual density and color grade')
+    expect(bible).toContain('consistent visual density and palette')
     expect(first).toContain(bible)
     expect(second).toContain(bible)
   })
@@ -71,16 +71,46 @@ describe('image style directives in prompts', () => {
   it('embeds every selected style directive and yields materially different prompts per style', () => {
     const prompts = fixedStyles.map((style) => buildImagePrompt(slide, project, undefined, style.id))
     prompts.forEach((prompt, index) => {
-      expect(prompt, fixedStyles[index].id).toContain(resolveImageStyle(fixedStyles[index].id).directive)
+      const style = fixedStyles[index]
+      expect(prompt, style.id).toContain(resolveImageStyle(style.id).directive)
+      // The directive carries the full material change: medium and negatives included.
+      expect(prompt, `${style.id} medium`).toContain(style.directive.medium)
+      expect(prompt, `${style.id} negatives`).toContain(style.directive.negative)
+      expect(prompt, `${style.id} palette`).toContain(style.directive.palette)
     })
     expect(new Set(prompts).size).toBe(fixedStyles.length)
+  })
+
+  it('no longer forces every style into photography — the medium comes from the style', () => {
+    const cartoon = buildImagePrompt(slide, project, undefined, 'cartoon-pop')
+    expect(cartoon).not.toContain('Create one photorealistic vertical photograph')
+    expect(cartoon).toContain('flat 2D digital cartoon illustration')
+    expect(cartoon).toContain('do not fall back to generic photography')
+
+    const brainrot = buildImagePrompt(slide, project, undefined, 'surreal-brainrot')
+    expect(brainrot).toMatch(/hybrid/i)
+    expect(brainrot).toMatch(/lore|saga/i)
+
+    // Capture styles still read as photography — via their own medium, not a global default.
+    const candid = buildImagePrompt(slide, project, undefined, 'creator-candid')
+    expect(candid).toContain('smartphone main camera')
+  })
+
+  it('does not globally ban the mechanics meme-native styles are made of', () => {
+    const cursed = buildImagePrompt(slide, project, undefined, 'cursed-collage')
+    expect(cursed).toContain('mixed-media digital collage')
+    expect(cursed).not.toMatch(/No [^.]*collages/)
+    // But lettering stays universally banned — the app composites approved text locally.
+    expect(cursed).toContain('No typography, lettering, captions')
+    const fried = buildImagePrompt(slide, project, undefined, 'deep-fried')
+    expect(fried).toContain('recompressed until it crunches')
   })
 
   it('embeds the style in the visual bible so the whole series inherits it', () => {
     for (const style of fixedStyles) {
       const bible = buildVisualBible(project, style.id)
       expect(bible).toContain(resolveImageStyle(style.id).directive)
-      expect(bible).toContain('consistent visual density and color grade')
+      expect(bible).toContain('consistent visual density and palette')
     }
   })
 

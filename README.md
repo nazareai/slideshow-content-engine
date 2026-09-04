@@ -12,29 +12,45 @@ Every slide is composed by `src/lib/artDirection.js` + `src/lib/compositor.js` r
 
 ## Image generation styles
 
-A separate control from the slide design presets: `src/lib/imageStyles.js` defines user-selectable photographic styles chosen **before** image generation, so a series can look like native creator content instead of generic professional stock. Each fixed style is a structured directive that changes six axes together — subject treatment, environment, lighting, camera/lens, texture/color grade, and composition — while every prompt still enforces 9:16 framing and text-safe negative space for the overlay.
+A separate control from the slide design presets: `src/lib/imageStyles.js` defines a TikTok-native taxonomy of user-selectable visual worlds chosen **before** image generation, grouped the way the platform's native content actually behaves. Each fixed style is a structured directive that changes seven axes together — medium, subject grammar, scene, composition, texture, palette, and negative constraints — while every prompt still enforces 9:16 framing and text-safe negative space for the overlay. Style names describe visual mechanics only; no living artists or protected studio names are imitated.
+
+**Capture** — camera-real looks:
 
 - **Creator Candid** (default) — authentic phone-shot UGC: ambient light, lived-in scenes, camera-roll honesty.
+- **Direct Flash** — hard on-camera flash, inky falloff, glossy late-night snapshot punch.
 - **Cinematic** — film-still drama: anamorphic depth, haze, teal-and-amber grade.
-- **Flash Editorial** — hard direct flash, inky falloff, glossy backstage-tabloid punch.
-- **Documentary** — observed reportage: available light, honest texture, matte photo-essay tone.
-- **Y2K Internet** — digicam flash, candy gels, chrome-and-gloss 2000s web nostalgia.
-- **Luxury Minimal** — one hero subject, vast negative space, gallery-grade soft light.
-- **Surreal Meme** — deadpan photoreal absurdity in flat, liminal stock-photo light.
+
+**Illustration & transformation** — the frame is rebuilt in a non-photographic medium:
+
+- **Cartoon Pop** — unmistakably flat 2D cartoon illustration: thick outlines, cel shading, candy color, zero photorealism.
+- **Clay & Toy 3D** — handmade miniature world: clay figures with fingerprints, toy diorama sets, soft macro depth.
+- **Retro Pixel** — chunky game-screen pixel art on a strict grid: dithered shading, sprite drama, no anti-aliasing.
+
+**Meme-native** — internet-born aesthetics where the artifacts are the style:
+
+- **Surreal Brainrot** — absurd hybrid creature-mascots treated as legendary heroes of a saga that does not exist: uncanny pseudo-lore staging, wildly wrong scale, recompressed jpeg-rot texture — deadpan and played straight, never tasteful neon surrealism.
+- **Deep-Fried Meme** — a snapshot nuked by generations of reposting: crunchy macroblocks, scorched saturation, ringing halos, lens-flare sparkles.
+- **Cursed Collage** — crudely cut photo scraps forced together: visible white cut lines, contradictory shadows, clashing resolutions.
+- **Y2K Web Chaos** — a maxed-out dial-up homepage: chrome blobs, sparkle glitter, gradient mesh skies, checkerboard floors.
+
+**Your direction:**
+
 - **Custom** — an editable style direction written verbatim into every prompt.
 
-The selected style is embedded in the per-series visual bible and every `meta/muse-image` prompt, recorded on each generated frame, persisted in the exported Markdown manifest (`## Image style`), and enforced by the staleness check: switching styles after generating marks frames stale until they are regenerated to match.
+The selected style is embedded in the per-series visual bible and every `meta/muse-image` prompt (style-specific negative constraints included — only lettering is universally banned, because the approved text is composited locally), recorded on each generated frame, persisted in the exported Markdown manifest (`## Image style`), and enforced by the staleness check: switching styles after generating marks frames stale until they are regenerated to match.
 - **Model-driven art direction**: the text model returns `layout`, `emphasis`, and `focalPoint` per slide through the response schema; the app validates the metadata (clamping focal points, verifying the emphasis appears in the copy, falling back to role-derived layouts) and renders it deterministically — same input, same pixels.
 - **Mobile safety**: all copy is fitted inside a TikTok-safe region (top search bar, bottom caption/sound area, and the right action rail are avoided); copy that cannot stay readable is rejected rather than shrunk or clipped.
 
 ### Visual proof
 
-`contact-sheet.html` (built alongside the app) renders a full generated sequence through the production pipeline over deterministic placeholder photography — one contact sheet per preset plus full-resolution detail frames. Capture it with:
+`contact-sheet.html` (built alongside the app) renders a full generated sequence through the production pipeline over deterministic placeholder photography — one contact sheet per preset plus full-resolution detail frames. `style-contact-sheet.html` renders one deterministic mock base frame per image style (painted in that style's medium, palette, texture, and composition mechanics) through the same production compositor, plus full-size detail frames for Cartoon Pop, Surreal Brainrot, Deep-Fried Meme, and Cursed Collage annotated with the exact prompt directive each injects. Capture them with:
 
 ```bash
 npm run build
 npx vite preview --port 4174 --strictPort   # in one terminal
 node scripts/capture-proof.mjs               # writes redesign-proof/*.png
+node scripts/capture-style-sheet.mjs         # writes redesign-proof/style-taxonomy-contact-sheet.png
+node scripts/capture-style-proof.mjs         # writes redesign-proof/studio-image-style-*.png
 ```
 
 Current captures live in `redesign-proof/`.
@@ -60,7 +76,7 @@ npm run build
 1. Enter a concrete topic, audience, lived tension, observation, and source.
 2. Enter an OpenRouter API key in the in-memory password field.
 3. Generate hook candidates, the complete 4 to 10-frame story, and caption with the configurable text model. Five frames is the manual-aligned default. The default test model is `openai/gpt-5.6-luna`.
-4. Review and edit the selected hook, every frame, caption, and photographic direction.
+4. Review and edit the selected hook, every frame, caption, and visual direction.
 5. Pick an image generation style (or write a Custom direction) and a slide design preset. Generate imagery with `meta/muse-image` — the selected style steers every prompt, then the app art-directs the approved copy onto each 1080 × 1920 image using the slide's planned composition, focal point, and emphasis word.
 6. Inspect every finished frame (use the contact sheet to judge sequence rhythm at a glance) and pass the structural quality gate, which also enforces layout diversity.
 7. Export `slideshow-upload-package.zip` — finished slides, prompts, contact sheet, and manifest.

@@ -54,18 +54,18 @@ describe('content engine', () => {
     const cinematic = resolveImageStyle('cinematic')
     const rendered = { composedBlob: {}, renderedText: 'The observed slide copy', renderedVisual: 'One scene', renderedPreset: 'impact', renderedLayout: 'evidence-card', renderedStyleDirective: cinematic.directive }
     expect(isRenderCurrent(slide, rendered, 'impact', cinematic.directive)).toBe(true)
-    expect(isRenderCurrent(slide, rendered, 'impact', resolveImageStyle('y2k-internet').directive)).toBe(false)
+    expect(isRenderCurrent(slide, rendered, 'impact', resolveImageStyle('y2k-web-chaos').directive)).toBe(false)
     expect(isRenderCurrent(slide, rendered, 'impact', resolveImageStyle({ styleId: 'custom', customText: 'edited direction' }).directive)).toBe(false)
     expect(isRenderCurrent(slide, rendered, 'impact')).toBe(true)
   })
 
   it('persists the selected image style through the exported manifest', () => {
     const project = validProject()
-    project.imageStyle = resolveImageStyle('y2k-internet')
+    project.imageStyle = resolveImageStyle('surreal-brainrot')
     const markdown = toMarkdown(project)
     expect(markdown).toContain('## Image style')
-    expect(markdown).toContain('Y2K Internet')
-    expect(markdown).toContain('digicam')
+    expect(markdown).toContain('Surreal Brainrot')
+    expect(markdown).toContain('hybrid')
     project.imageStyle = resolveImageStyle({ styleId: 'custom', customText: 'infrared film in a greenhouse' })
     const customMarkdown = toMarkdown(project)
     expect(customMarkdown).toContain('custom direction: infrared film in a greenhouse')
