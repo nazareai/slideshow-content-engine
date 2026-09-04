@@ -31,6 +31,25 @@ function Score({ value }) {
   return <span className={cn('rounded-md px-2 py-1 text-sm font-bold tabular-nums', tone)}>{value}/100</span>
 }
 
+function RangeControl({ label, ariaLabel, value, valueLabel = value, className, ...props }) {
+  return (
+    <label className={cn('grid min-w-0 gap-2 rounded-lg bg-white/70 p-3', className)}>
+      <span className="flex items-baseline justify-between gap-3 text-sm font-semibold text-ink">
+        <span>{label}</span>
+        <output className="shrink-0 font-mono text-xs font-bold tabular-nums text-black/60">{valueLabel}</output>
+      </span>
+      <input
+        id={ariaLabel.toLowerCase().replaceAll(' ', '-')}
+        aria-label={ariaLabel}
+        className="overlay-range focus-ring block min-h-11 w-full min-w-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-45"
+        type="range"
+        value={value}
+        {...props}
+      />
+    </label>
+  )
+}
+
 function App() {
   const [ideas, setIdeas] = useState(starterIdeas)
   const [topic, setTopic] = useState('building an autonomous content engine')
@@ -351,7 +370,7 @@ function App() {
   return (
     <div className="min-h-dvh bg-paper">
       <header className="border-b border-black/15 bg-paper">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-7xl min-w-0 flex-wrap items-center justify-between gap-2 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-lg bg-cobalt text-white"><Sparkles size={20} aria-hidden="true" /></div><div><p className="font-display text-xl font-bold">Slideshow Content Engine</p><p className="text-xs text-black/55">Research, story, real visuals, export</p></div></div>
           <span className="rounded-full border border-black/15 bg-white px-3 py-1.5 text-xs font-semibold">Local MVP · no publishing</span>
         </div>
@@ -359,7 +378,7 @@ function App() {
 
       <main id="main" className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-12">
         <section className="mb-10 grid gap-8 border-b border-black/15 pb-10 lg:grid-cols-[1.3fr_.7fr] lg:items-end">
-          <div><p className="mb-3 text-sm font-bold text-cobalt">MAKE THE CONTENT WORTH DISTRIBUTING</p><h1 className="max-w-3xl text-balance font-display text-4xl font-bold leading-tight sm:text-6xl">Turn one sharp observation into a complete slideshow.</h1></div>
+          <div className="min-w-0"><p className="mb-3 text-sm font-bold text-cobalt">MAKE THE CONTENT WORTH DISTRIBUTING</p><h1 className="max-w-3xl break-words text-balance font-display text-4xl font-bold leading-tight sm:text-6xl">Turn one sharp observation into a complete slideshow.</h1></div>
           <p className="text-pretty text-lg leading-8 text-black/65">Score the premise, shape the story, reject generic output, then export a package ready for human review and native TikTok finishing.</p>
         </section>
 
@@ -437,7 +456,24 @@ function App() {
                   {slides.map((slide) => <article key={slide.id} className="panel overflow-hidden">
                     <div className="flex items-center justify-between gap-2 border-b border-black/10 px-4 py-3"><span className="flex min-w-0 items-center gap-2 text-sm font-bold tabular-nums">{String(slide.id).padStart(2,'0')} · {slide.role}{slide.direction?.layout && <span className="truncate rounded bg-black/5 px-1.5 py-0.5 text-[11px] font-semibold text-black/60">{slide.direction.layout}{slide.direction.mirror ? ' ⇋' : ''}</span>}</span><span className="shrink-0 text-xs text-black/45">{images[slide.id]?.composedUrl ? 'TEXT ON IMAGE' : `${slide.text.length}/110`}</span></div>
                     {images[slide.id]?.composedUrl && <><img src={images[slide.id].composedUrl} alt={`Finished slide ${slide.id} with generated visual and text overlay`} className="aspect-[9/16] w-full object-cover" /><label className="flex min-h-11 items-center gap-2 border-t border-black/10 px-4 py-3 text-sm font-bold"><input type="checkbox" checked={Boolean(reviewedSlides[slide.id])} onChange={(event) => setReviewedSlides((current) => ({ ...current, [slide.id]: event.target.checked }))} /> Reviewed and approved</label></>}
-                    <div className="p-4"><label className="sr-only" htmlFor={`slide-${slide.id}`}>Slide {slide.id} copy</label><textarea id={`slide-${slide.id}`} className="field min-h-28 resize-y font-display text-xl font-bold leading-snug" value={slide.text} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'text', e.target.value)} /><label className="label mt-4" htmlFor={`visual-${slide.id}`}>Visual direction</label><input id={`visual-${slide.id}`} className="field" value={slide.visual} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'visual', e.target.value)} /><fieldset className="mt-4 grid gap-3 rounded-xl border border-black/10 bg-black/[0.025] p-3"><legend className="px-1 text-xs font-black uppercase tracking-[0.12em]">Overlay layout</legend><label className="label">Text position<select aria-label={`Slide ${slide.id} text position`} value={slide.overlay?.position || 'auto'} onChange={(e) => updateOverlay(slide.id, { position: e.target.value })} className="field mt-1 font-normal"><option value="auto">Automatic</option><option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option></select></label><div className="grid grid-cols-2 gap-3"><label className="label">Horizontal offset<input aria-label={`Slide ${slide.id} horizontal offset`} type="range" min="-320" max="320" step="8" value={slide.overlay?.offsetX || 0} onChange={(e) => updateOverlay(slide.id, { offsetX: Number(e.target.value) })} /></label><label className="label">Vertical offset<input aria-label={`Slide ${slide.id} vertical offset`} type="range" min="-560" max="560" step="8" value={slide.overlay?.offsetY || 0} onChange={(e) => updateOverlay(slide.id, { offsetY: Number(e.target.value) })} /></label></div><button type="button" role="switch" aria-checked={Boolean(slide.overlay?.backgroundEnabled)} aria-label={`Slide ${slide.id} overlay background`} className={cn('button justify-center', slide.overlay?.backgroundEnabled && 'bg-black text-white')} onClick={() => updateOverlay(slide.id, { backgroundEnabled: !slide.overlay?.backgroundEnabled })}>Text background: {slide.overlay?.backgroundEnabled ? 'On' : 'Off'}</button><div className="grid grid-cols-3 gap-3"><label className="label">Opacity<input aria-label={`Slide ${slide.id} background opacity`} type="range" min="0" max="1" step="0.05" value={slide.overlay?.backgroundOpacity ?? 0.72} disabled={!slide.overlay?.backgroundEnabled} onChange={(e) => updateOverlay(slide.id, { backgroundOpacity: Number(e.target.value) })} /></label><label className="label">Panel padding<input aria-label={`Slide ${slide.id} panel padding`} type="range" min="0" max="96" step="4" value={slide.overlay?.backgroundPadding ?? 32} onChange={(e) => updateOverlay(slide.id, { backgroundPadding: Number(e.target.value) })} /></label><label className="label">Text size<input aria-label={`Slide ${slide.id} text size`} type="range" min="0.7" max="1.35" step="0.05" value={slide.overlay?.textScale ?? 1} onChange={(e) => updateOverlay(slide.id, { textScale: Number(e.target.value) })} /></label></div><p className="text-xs font-normal leading-5 text-black/55">Position and offsets move the copy and the panel beneath it as one object; panel padding and text size resize that panel. Every change re-renders the frame and clears its approval.</p></fieldset></div>
+                    <div className="p-4"><label className="sr-only" htmlFor={`slide-${slide.id}`}>Slide {slide.id} copy</label><textarea id={`slide-${slide.id}`} className="field min-h-28 resize-y font-display text-xl font-bold leading-snug" value={slide.text} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'text', e.target.value)} /><label className="label mt-4" htmlFor={`visual-${slide.id}`}>Visual direction</label><input id={`visual-${slide.id}`} className="field" value={slide.visual} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'visual', e.target.value)} /><fieldset className="mt-4 grid min-w-0 gap-3 rounded-xl border border-black/10 bg-black/[0.025] p-3 sm:p-4">
+                      <legend className="px-1 text-xs font-black uppercase tracking-[0.12em]">Overlay layout</legend>
+                      <label className="label mb-0">Text position
+                        <select aria-label={`Slide ${slide.id} text position`} value={slide.overlay?.position || 'auto'} onChange={(e) => updateOverlay(slide.id, { position: e.target.value })} className="field mt-1 font-normal">
+                          <option value="auto">Automatic</option><option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option>
+                        </select>
+                      </label>
+                      <div className="grid min-w-0 grid-cols-1 gap-3">
+                        <RangeControl label="Horizontal offset" ariaLabel={`Slide ${slide.id} horizontal offset`} min="-320" max="320" step="8" value={slide.overlay?.offsetX || 0} valueLabel={`${slide.overlay?.offsetX || 0}px`} onChange={(e) => updateOverlay(slide.id, { offsetX: Number(e.target.value) })} />
+                        <RangeControl label="Vertical offset" ariaLabel={`Slide ${slide.id} vertical offset`} min="-560" max="560" step="8" value={slide.overlay?.offsetY || 0} valueLabel={`${slide.overlay?.offsetY || 0}px`} onChange={(e) => updateOverlay(slide.id, { offsetY: Number(e.target.value) })} />
+                      </div>
+                      <button type="button" role="switch" aria-checked={Boolean(slide.overlay?.backgroundEnabled)} aria-label={`Slide ${slide.id} overlay background`} className={cn('button justify-center', slide.overlay?.backgroundEnabled && 'bg-black text-white')} onClick={() => updateOverlay(slide.id, { backgroundEnabled: !slide.overlay?.backgroundEnabled })}>{slide.overlay?.backgroundEnabled ? 'Background on' : 'Background off'}</button>
+                      <div className="grid min-w-0 grid-cols-1 gap-3">
+                        <RangeControl label="Background opacity" ariaLabel={`Slide ${slide.id} background opacity`} min="0" max="0.95" step="0.05" value={slide.overlay?.backgroundOpacity ?? 0.7} valueLabel={`${Math.round((slide.overlay?.backgroundOpacity ?? 0.7) * 100)}%`} disabled={!slide.overlay?.backgroundEnabled} onChange={(e) => updateOverlay(slide.id, { backgroundOpacity: Number(e.target.value) })} />
+                        <RangeControl label="Panel padding" ariaLabel={`Slide ${slide.id} panel padding`} min="0" max="96" step="4" value={slide.overlay?.backgroundPadding ?? 32} valueLabel={`${slide.overlay?.backgroundPadding ?? 32}px`} onChange={(e) => updateOverlay(slide.id, { backgroundPadding: Number(e.target.value) })} />
+                        <RangeControl label="Text size" ariaLabel={`Slide ${slide.id} text size`} min="0.7" max="1.35" step="0.05" value={slide.overlay?.textScale ?? 1} valueLabel={`${Math.round((slide.overlay?.textScale ?? 1) * 100)}%`} onChange={(e) => updateOverlay(slide.id, { textScale: Number(e.target.value) })} />
+                      </div>
+                    </fieldset></div>
                   </article>)}
                 </div>
                 <div className="panel mt-4 p-5"><label className="label" htmlFor="caption">Caption</label><textarea id="caption" className="field min-h-24 resize-y" value={caption} onChange={(e) => setCaption(e.target.value)} /></div>
