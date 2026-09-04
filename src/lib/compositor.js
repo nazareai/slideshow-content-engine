@@ -277,6 +277,15 @@ function paintEmphasis(context, plan) {
   }
 }
 
+function paintLayoutPanel(context, plan) {
+  if (!plan.overlay.panelEnabled || plan.overlay.panelOpacity <= 0) return
+  const { panel } = plan.composite
+  context.save()
+  context.globalAlpha = plan.overlay.panelOpacity
+  paintPanel(context, plan.preset, panel.x, panel.y, panel.width, panel.height, plan.overlay.panelColor || plan.preset.palette.paper, 0)
+  context.restore()
+}
+
 function paintTextBlock(context, plan, color) {
   const { preset, fontSize, emphasisSpan } = plan
   const { backdrop } = plan.composite
@@ -337,7 +346,7 @@ const painters = {
     // `edge.top` is the panel's logical top edge before any bleed, so the
     // kicker, accent bar, and rule stay pinned to the copy they introduce.
     verticalScrim(context, edge.top - 320, edge.top, 0.3 * preset.scrimBoost)
-    paintPanel(context, preset, panel.x, panel.y, panel.width, panel.height, preset.palette.paper, 0)
+    paintLayoutPanel(context, plan)
     context.fillStyle = preset.palette.accent
     const barX = plan.direction.mirror ? textSafeArea.right - 12 : textSafeArea.left - 28
     context.fillRect(barX, edge.top + 64, 12, 210)
@@ -414,7 +423,7 @@ const painters = {
     const { preset, frame, index, total } = plan
     const { panel, edge, text } = plan.composite
     verticalScrim(context, edge.top - 360, edge.top, 0.34 * preset.scrimBoost)
-    paintPanel(context, preset, panel.x, panel.y, panel.width, panel.height, preset.palette.paper, 0)
+    paintLayoutPanel(context, plan)
     const badge = 104
     const badgeX = plan.direction.mirror ? textSafeArea.right - badge : text.left
     context.fillStyle = preset.palette.accent

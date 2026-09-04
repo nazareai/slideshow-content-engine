@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeExportReadiness, ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, sequenceIsDiverse, slideToSvg, toMarkdown } from './engine'
+import { computeExportReadiness, ensureZipFilename, isRenderCurrent, makeSlides, overlaySettingsKey, runQualityGate, scoreIdea, sequenceIsDiverse, slideToSvg, toMarkdown } from './engine'
 import { resolveImageStyle } from './imageStyles'
 
 const input = { topic: 'SEO', audience: 'founders', angle: 'Why qualified search traffic suddenly stalls', observation: 'Three pages ranked, but none converted.', slideCount: 7 }
@@ -51,7 +51,7 @@ describe('content engine', () => {
 
   it('marks a render stale whenever its per-slide overlay layout changes', () => {
     const slide = { text: 'The observed slide copy', visual: 'One scene', direction: { layout: 'evidence-card' }, overlay: { position: 'top', offsetX: 0 } }
-    const rendered = { composedBlob: {}, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: 'impact', renderedLayout: 'evidence-card', renderedOverlayKey: JSON.stringify({ position: 'top', offsetX: 0, offsetY: 0, backgroundEnabled: false, backgroundOpacity: 0.72, backgroundPadding: 32, textScale: 1 }) }
+    const rendered = { composedBlob: {}, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: 'impact', renderedLayout: 'evidence-card', renderedOverlayKey: overlaySettingsKey({ position: 'top', offsetX: 0 }) }
     expect(isRenderCurrent(slide, rendered, 'impact')).toBe(true)
     expect(isRenderCurrent({ ...slide, overlay: { ...slide.overlay, position: 'bottom' } }, rendered, 'impact')).toBe(false)
     expect(isRenderCurrent({ ...slide, overlay: { ...slide.overlay, backgroundEnabled: true } }, rendered, 'impact')).toBe(false)

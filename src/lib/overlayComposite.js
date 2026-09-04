@@ -16,6 +16,8 @@ export const OVERLAY_BOUNDS = Object.freeze({
   backgroundOpacity: Object.freeze([0, 1]),
   backgroundPadding: Object.freeze([0, 96]),
   textScale: Object.freeze([0.7, 1.35]),
+  panelTop: Object.freeze([20, 85]),
+  panelOpacity: Object.freeze([0, 1]),
 })
 
 export const DEFAULT_OVERLAY_SETTINGS = Object.freeze({
@@ -26,7 +28,15 @@ export const DEFAULT_OVERLAY_SETTINGS = Object.freeze({
   backgroundOpacity: 0.72,
   backgroundPadding: 32,
   textScale: 1,
+  // The broad layout panel shown in designs such as takeaway-ledger. This is
+  // deliberately separate from the tight optional background around glyphs.
+  panelEnabled: true,
+  panelTop: null,
+  panelOpacity: 1,
+  panelColor: null,
 })
+
+const normalizeHexColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value).toLowerCase() : null
 
 // One normalization for both the renderer and the freshness key. An explicit
 // 0 must survive (hence the finite check rather than `||`), and an omitted
@@ -42,6 +52,10 @@ export function normalizeOverlaySettings(value) {
     backgroundOpacity: bounded('backgroundOpacity'),
     backgroundPadding: bounded('backgroundPadding'),
     textScale: bounded('textScale'),
+    panelEnabled: settings.panelEnabled === undefined ? DEFAULT_OVERLAY_SETTINGS.panelEnabled : Boolean(settings.panelEnabled),
+    panelTop: settings.panelTop === undefined || settings.panelTop === null ? null : bounded('panelTop'),
+    panelOpacity: bounded('panelOpacity'),
+    panelColor: normalizeHexColor(settings.panelColor),
   }
 }
 
@@ -140,8 +154,15 @@ export function composeOverlayGeometry({
 
   const left = chrome.mode === 'band' ? 0 : clamp(edge.left, 0, canvas.width)
   const right = chrome.mode === 'band' ? canvas.width : clamp(edge.right, 0, canvas.width)
-  const top = chrome.mode === 'card' ? clamp(edge.top, 0, canvas.height) : spanTop
-  const bottom = chrome.mode === 'card' ? clamp(edge.bottom, 0, canvas.height) : spanBottom
+  let top = chrome.mode === 'card' ? clamp(edge.top, 0, canvas.height) : spanTop
+  let bottom = chrome.mode === 'card' ? clamp(edge.bottom, 0, canvas.height) : spanBottom
+  // Full-width bands are a separate layout layer, not a background attached
+  // to the text. Its top edge can therefore be resized independently while
+  // the copy keeps its own position and metrics.
+  if (chrome.mode === 'band' && settings.panelTop !== null) {
+    top = Math.round(canvas.height * settings.panelTop / 100)
+    bottom = canvas.height
+  }
   const panel = { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }
 
   // Gradient scrims need a direction, not just an extent: `from` is the

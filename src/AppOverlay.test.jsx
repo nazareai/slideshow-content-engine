@@ -105,7 +105,7 @@ describe('per-slide composite overlay controls', () => {
     ['text position', () => setFieldValue(control('Slide 1 text position'), 'top')],
     ['panel padding', () => setFieldValue(control('Slide 1 panel padding'), '96')],
     ['text size', () => setFieldValue(control('Slide 1 text size'), '1.3')],
-    ['background toggle', () => control('Slide 1 overlay background').click()],
+    ['background toggle', () => control('Slide 1 tight text background').click()],
   ])('changing the %s clears that slide\'s approval and blocks export until it is reviewed again', async (_, change) => {
     await act(async () => change())
 

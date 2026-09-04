@@ -76,6 +76,40 @@ async function render(layoutId, overlay, { presetId = 'impact', text = COPY, mir
 const boxOf = (plan) => plan.composite.panel
 const textBox = (plan) => plan.composite.text
 
+describe('large layout panel controls', () => {
+  it('resizes the takeaway-ledger full-width panel independently from text geometry', () => {
+    const base = planFor('takeaway-ledger', { panelTop: 59 })
+    const smaller = planFor('takeaway-ledger', { panelTop: 75 })
+
+    expect(base.composite.panel).toMatchObject({ x: 0, y: 1133, width: 1080, height: 787 })
+    expect(smaller.composite.panel).toMatchObject({ x: 0, y: 1440, width: 1080, height: 480 })
+    expect(smaller.lines.map(({ text, x, y }) => ({ text, x, y }))).toEqual(
+      base.lines.map(({ text, x, y }) => ({ text, x, y })),
+    )
+  })
+
+  it('paints the requested large-panel bounds, color and opacity', async () => {
+    const overlay = { panelTop: 70, panelColor: '#112233', panelOpacity: 0.4 }
+    const { plan, calls } = await render('takeaway-ledger', overlay)
+    const panel = plan.composite.panel
+    const alphaAt = calls.findIndex((call) => call.op === 'set:globalAlpha' && call.args[0] === 0.4)
+
+    expect(panel).toMatchObject({ x: 0, y: 1344, width: 1080, height: 576 })
+    expect(alphaAt).toBeGreaterThanOrEqual(0)
+    expect(calls.slice(alphaAt).some((call) => call.op === 'fillRect' && call.fillStyle === '#112233' &&
+      call.args[0] === panel.x && call.args[1] === panel.y &&
+      call.args[2] === panel.width && call.args[3] === panel.height)).toBe(true)
+  })
+
+  it('includes large-panel appearance in the render freshness key', () => {
+    const base = overlaySettingsKey({ panelEnabled: true, panelTop: 59, panelOpacity: 1, panelColor: '#f7f5f0' })
+    expect(overlaySettingsKey({ panelEnabled: false, panelTop: 59, panelOpacity: 1, panelColor: '#f7f5f0' })).not.toBe(base)
+    expect(overlaySettingsKey({ panelEnabled: true, panelTop: 70, panelOpacity: 1, panelColor: '#f7f5f0' })).not.toBe(base)
+    expect(overlaySettingsKey({ panelEnabled: true, panelTop: 59, panelOpacity: 0.4, panelColor: '#f7f5f0' })).not.toBe(base)
+    expect(overlaySettingsKey({ panelEnabled: true, panelTop: 59, panelOpacity: 1, panelColor: '#112233' })).not.toBe(base)
+  })
+})
+
 describe('overlay settings normalization', () => {
   it('resolves an unset overlay to the documented defaults instead of to zero', () => {
     expect(normalizeOverlaySettings(undefined)).toEqual(DEFAULT_OVERLAY_SETTINGS)
@@ -86,7 +120,7 @@ describe('overlay settings normalization', () => {
     expect(normalizeOverlaySettings({ backgroundOpacity: 0 }).backgroundOpacity).toBe(0)
     expect(normalizeOverlaySettings({ backgroundPadding: 0 }).backgroundPadding).toBe(0)
     const wild = normalizeOverlaySettings({ position: 'sideways', offsetX: 9e9, offsetY: -9e9, backgroundOpacity: 4, backgroundPadding: 500, textScale: 12 })
-    expect(wild).toEqual({ position: 'auto', offsetX: 320, offsetY: -560, backgroundEnabled: false, backgroundOpacity: 1, backgroundPadding: 96, textScale: 1.35 })
+    expect(wild).toEqual({ ...DEFAULT_OVERLAY_SETTINGS, position: 'auto', offsetX: 320, offsetY: -560, backgroundOpacity: 1, backgroundPadding: 96, textScale: 1.35 })
     expect(normalizeOverlaySettings({ offsetX: 'nonsense', textScale: NaN })).toEqual(DEFAULT_OVERLAY_SETTINGS)
   })
 
