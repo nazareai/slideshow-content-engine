@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, sequenceIsDiverse, slideToSvg, toMarkdown } from './engine'
+import { computeExportReadiness, ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, sequenceIsDiverse, slideToSvg, toMarkdown } from './engine'
 import { resolveImageStyle } from './imageStyles'
 
 const input = { topic: 'SEO', audience: 'founders', angle: 'Why qualified search traffic suddenly stalls', observation: 'Three pages ranked, but none converted.', slideCount: 7 }
@@ -105,5 +105,89 @@ describe('content engine', () => {
     const svg = slideToSvg(validProject().slides[0], 7)
     expect(svg).toContain('width="1080" height="1920"')
     expect(svg).toContain('EDITABLE SLIDE ASSET')
+  })
+})
+
+describe('export readiness', () => {
+  const style = resolveImageStyle('cinematic')
+  const readyState = () => {
+    const project = validProject()
+    const currentRender = (slide) => ({
+      dataUrl: 'data:image/png;base64,QUFB', prompt: `prompt for slide ${slide.id}`, composedBlob: {},
+      renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: 'impact',
+      renderedLayout: slide.direction.layout, renderedStyleDirective: style.directive,
+    })
+    return {
+      slides: project.slides,
+      gate: runQualityGate(project),
+      images: Object.fromEntries(project.slides.map((slide) => [slide.id, currentRender(slide)])),
+      reviewed: Object.fromEntries(project.slides.map((slide) => [slide.id, true])),
+      presetId: 'impact',
+      styleDirective: style.directive,
+    }
+  }
+
+  it('is ready exactly when the gate passes and every slide is rendered, current, and approved', () => {
+    const readiness = computeExportReadiness(readyState())
+    expect(readiness).toEqual({ ready: true, blockers: [], gateFailures: [], missingSlides: [], staleSlides: [], unapprovedSlides: [] })
+  })
+
+  it('surfaces each quality-gate failure as its own named blocker', () => {
+    const state = readyState()
+    state.slides[1].text = 'Only three words'
+    state.images[state.slides[1].id].renderedText = 'Only three words'
+    state.gate = runQualityGate({ ...validProject(), slides: state.slides })
+    const readiness = computeExportReadiness(state)
+    expect(readiness.ready).toBe(false)
+    expect(readiness.gateFailures).toEqual(['Copy is 4 to 16 readable words'])
+    expect(readiness.blockers.some((blocker) => blocker.includes('Quality gate: Copy is 4 to 16 readable words'))).toBe(true)
+  })
+
+  it('reports slides with no stored frame as missing, not stale', () => {
+    const state = readyState()
+    delete state.images[2]
+    const readiness = computeExportReadiness(state)
+    expect(readiness.missingSlides).toEqual([2])
+    expect(readiness.staleSlides).toEqual([])
+    expect(readiness.blockers.some((blocker) => blocker.includes('Slide 2: no finished frame yet'))).toBe(true)
+  })
+
+  it('reports edited or restyled renders as stale, including a raw frame whose overlay was invalidated', () => {
+    const state = readyState()
+    state.images[3].renderedText = 'Different copy than the slide now holds'
+    delete state.images[4].composedBlob // text edit keeps the raw image but strips the overlay
+    const readiness = computeExportReadiness(state)
+    expect(readiness.staleSlides).toEqual([3, 4])
+    expect(readiness.missingSlides).toEqual([])
+    expect(readiness.blockers.some((blocker) => blocker.includes('Slides 3, 4') && blocker.includes('changed after the last render'))).toBe(true)
+  })
+
+  it('reports current-but-unreviewed slides as awaiting approval', () => {
+    const state = readyState()
+    state.reviewed[5] = false
+    delete state.reviewed[6]
+    const readiness = computeExportReadiness(state)
+    expect(readiness.unapprovedSlides).toEqual([5, 6])
+    expect(readiness.blockers.some((blocker) => blocker.includes('Slides 5, 6') && blocker.includes('Reviewed and approved'))).toBe(true)
+  })
+
+  it('keeps the three render categories disjoint and stacks them with gate failures', () => {
+    const state = readyState()
+    state.gate = { passed: false, failures: ['Caption is present'] }
+    delete state.images[1]
+    state.images[2].renderedPreset = 'zine'
+    state.reviewed[3] = false
+    const readiness = computeExportReadiness(state)
+    expect(readiness.ready).toBe(false)
+    expect(readiness.missingSlides).toEqual([1])
+    expect(readiness.staleSlides).toEqual([2])
+    expect(readiness.unapprovedSlides).toEqual([3])
+    expect(readiness.blockers).toHaveLength(4)
+  })
+
+  it('never reports ready for an empty slide set', () => {
+    const readiness = computeExportReadiness({ slides: [], gate: { passed: true, failures: [] }, images: {}, reviewed: {} })
+    expect(readiness.ready).toBe(false)
+    expect(readiness.blockers).toEqual(['There are no slides to export yet.'])
   })
 })

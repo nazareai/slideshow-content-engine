@@ -3,7 +3,7 @@ import * as Tabs from '@radix-ui/react-tabs'
 import JSZip from 'jszip'
 import { Check, Clipboard, Download, Grid3x3, Lightbulb, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { cn } from './lib/cn'
-import { ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, toMarkdown } from './lib/engine'
+import { computeExportReadiness, ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, toMarkdown } from './lib/engine'
 import { DEFAULT_IMAGE_MODEL, generateSlideImages, IMAGE_GENERATION_CONCURRENCY, planImagePrompts } from './lib/imageApi'
 import { composeContactSheet, composeSlideDataUrl, loadImage } from './lib/compositor'
 import { DEFAULT_PRESET_ID, getPreset, STYLE_PRESETS } from './lib/artDirection'
@@ -60,6 +60,10 @@ function App() {
   const stale = briefKey !== generatedBriefKey
   const project = useMemo(() => ({ title: angle || topic, audience, observation, source, slides, caption, stale, imageStyle }), [angle, topic, audience, observation, source, slides, caption, stale, imageStyle])
   const gate = useMemo(() => runQualityGate(project), [project])
+  const readiness = useMemo(
+    () => computeExportReadiness({ slides, gate, images, reviewed: reviewedSlides, presetId: stylePreset, styleDirective: imageStyle.directive }),
+    [slides, gate, images, reviewedSlides, stylePreset, imageStyle],
+  )
 
   function generate() {
     setSlides(makeSlides({ topic, audience, angle, observation, slideCount }))
@@ -241,15 +245,21 @@ function App() {
 
   function saveBlob(content, name, type) {
     const blob = content instanceof Blob ? content : new Blob([content], { type })
+    if (typeof URL.createObjectURL !== 'function') throw new Error('This browser cannot save files from the page.')
     const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = type === 'image/png' ? name : ensureZipFilename(name)
-    link.type = type
-    link.style.display = 'none'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+    try {
+      const link = document.createElement('a')
+      link.href = url
+      link.download = type === 'image/png' ? name : ensureZipFilename(name)
+      link.type = type
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (error) {
+      URL.revokeObjectURL(url)
+      throw new Error(`The browser blocked the download link${error?.message ? ` (${error.message})` : ''}.`)
+    }
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
@@ -274,9 +284,9 @@ function App() {
   }
 
   async function download() {
-    const readyCount = project.slides.filter((slide) => isRenderCurrent(slide, images[slide.id], stylePreset, imageStyle.directive) && reviewedSlides[slide.id]).length
-    if (!gate.passed || exporting || readyCount !== project.slides.length) {
-      setNotice('Generate, inspect, and approve every finished image-and-text slide before export. Raw images, stale styles, and fallback cards are not final output.')
+    if (exporting) return
+    if (!readiness.ready) {
+      setNotice(`Export is blocked. ${readiness.blockers.join(' ')}`)
       return
     }
     setExporting(true)
@@ -284,18 +294,20 @@ function App() {
       const zip = new JSZip(); zip.file('slideshow-package.md', toMarkdown(project)); const folder = zip.folder('slides')
       for (const slide of project.slides) {
         const generated = images[slide.id]
-        if (isRenderCurrent(slide, generated, stylePreset, imageStyle.directive)) {
-          folder.file(`slide-${String(slide.id).padStart(2,'0')}.png`, generated.composedBlob)
-          folder.file(`slide-${String(slide.id).padStart(2,'0')}-prompt.txt`, generated.prompt)
-        } else {
-          throw new Error(`Slide ${slide.id} has no current composed image.`)
-        }
+        if (!isRenderCurrent(slide, generated, stylePreset, imageStyle.directive)) throw new Error(`Slide ${slide.id} lost its finished frame while the package was being assembled — re-render it and retry.`)
+        folder.file(`slide-${String(slide.id).padStart(2,'0')}.png`, generated.composedBlob)
+        folder.file(`slide-${String(slide.id).padStart(2,'0')}-prompt.txt`, generated.prompt || 'Image prompt unavailable for this frame.')
       }
-      const sheet = await buildContactSheet()
-      if (sheet) zip.file('contact-sheet.png', sheet)
+      // The contact sheet is an auxiliary QA artifact — never fail the whole
+      // package over it.
+      let sheetIncluded = false
+      try {
+        const sheet = await buildContactSheet()
+        if (sheet) { zip.file('contact-sheet.png', sheet); sheetIncluded = true }
+      } catch { /* exported package stays valid without it */ }
       const blob = await zip.generateAsync({ type: 'blob' }); saveBlob(blob, 'slideshow-upload-package.zip', 'application/zip')
-      setNotice(`${readyCount} composed slides in the ${getPreset(stylePreset).name} style were exported with a contact sheet and the Markdown manifest.`)
-    } catch { setNotice('Export failed. No package was produced. Try again after reducing the slide count.') }
+      setNotice(`${project.slides.length} composed slides in the ${getPreset(stylePreset).name} style were exported with the Markdown manifest${sheetIncluded ? ' and a contact sheet' : ' — the contact sheet could not be rendered and was left out'}.`)
+    } catch (error) { setNotice(`Export failed: ${error?.message || 'the package could not be assembled.'} No package was downloaded.`) }
     finally { setExporting(false) }
   }
 
@@ -401,7 +413,13 @@ function App() {
                   </article>)}
                 </div>
                 <div className="panel mt-4 p-5"><label className="label" htmlFor="caption">Caption</label><textarea id="caption" className="field min-h-24 resize-y" value={caption} onChange={(e) => setCaption(e.target.value)} /></div>
-                <div className="mt-4 flex flex-wrap justify-end gap-3"><Button variant="secondary" onClick={copy} disabled={!gate.passed}><Clipboard size={17} aria-hidden="true" />Copy manifest</Button><Button variant="secondary" onClick={downloadContactSheet} disabled={!slides.some((slide) => images[slide.id]?.composedUrl)}><Grid3x3 size={17} aria-hidden="true" />Contact sheet</Button><Button onClick={download} disabled={!gate.passed || exporting}><Download size={17} aria-hidden="true" />{exporting ? 'Exporting…' : 'Export package'}</Button></div>
+                <div className="mt-4 flex flex-wrap justify-end gap-3"><Button variant="secondary" onClick={copy} disabled={!gate.passed}><Clipboard size={17} aria-hidden="true" />Copy manifest</Button><Button variant="secondary" onClick={downloadContactSheet} disabled={!slides.some((slide) => images[slide.id]?.composedUrl)}><Grid3x3 size={17} aria-hidden="true" />Contact sheet</Button><Button onClick={download} disabled={!readiness.ready || exporting}><Download size={17} aria-hidden="true" />{exporting ? 'Exporting…' : 'Export package'}</Button></div>
+                {!readiness.ready && (
+                  <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm" data-testid="export-blockers">
+                    <p className="font-bold">Export is blocked until every item below is resolved:</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-black/70">{readiness.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
+                  </div>
+                )}
                 {notice && <p role="status" className="mt-3 rounded-lg bg-moss px-4 py-3 text-sm font-semibold">{notice}</p>}
               </section>
             </div>

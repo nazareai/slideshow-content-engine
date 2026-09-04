@@ -65,6 +65,37 @@ export function isRenderCurrent(slide, rendered, presetId, styleDirective) {
     (styleDirective === undefined || rendered.renderedStyleDirective === styleDirective)
 }
 
+// Single source of truth for export readiness. The Export button's disabled
+// state and its click handler must both consume this computation, so the UI
+// can never show an enabled button whose click is then refused — or a dead
+// button with no visible reason. Every blocker names the slides it covers and
+// distinguishes quality-gate failures, missing renders, stale renders, and
+// missing approvals.
+export function computeExportReadiness({ slides = [], gate, images = {}, reviewed = {}, presetId, styleDirective } = {}) {
+  const missingSlides = []
+  const staleSlides = []
+  const unapprovedSlides = []
+  for (const slide of slides) {
+    const rendered = images[slide.id]
+    if (!isRenderCurrent(slide, rendered, presetId, styleDirective)) {
+      if (rendered?.composedBlob || rendered?.dataUrl) staleSlides.push(slide.id)
+      else missingSlides.push(slide.id)
+    } else if (!reviewed[slide.id]) {
+      unapprovedSlides.push(slide.id)
+    }
+  }
+  const gateFailures = gate && gate.passed !== true ? [...(gate.failures?.length ? gate.failures : ['The quality gate did not pass.'])] : []
+  const label = (ids) => `Slide${ids.length === 1 ? '' : 's'} ${ids.join(', ')}`
+  const blockers = [
+    ...gateFailures.map((failure) => `Quality gate: ${failure} — see the Quality gate tab.`),
+    ...(missingSlides.length ? [`${label(missingSlides)}: no finished frame yet — generate finished slides (image + text) first.`] : []),
+    ...(staleSlides.length ? [`${label(staleSlides)}: the copy, visual direction, image style, or design preset changed after the last render — regenerate or re-render before export.`] : []),
+    ...(unapprovedSlides.length ? [`${label(unapprovedSlides)}: check “Reviewed and approved” under the finished frame.`] : []),
+  ]
+  if (!slides.length) blockers.push('There are no slides to export yet.')
+  return { ready: blockers.length === 0, blockers, gateFailures, missingSlides, staleSlides, unapprovedSlides }
+}
+
 // The composed sequence must read as an art-directed set: at least
 // min(5, n) distinct compositions and never the same layout twice in a row.
 export function sequenceIsDiverse(slides = []) {
