@@ -1,0 +1,44 @@
+# Slideshow Content Engine
+
+A local MVP for creating TikTok slideshow packages from sourced observations. It generates and scores hooks, writes editable 4 to 10-frame stories through a configurable OpenRouter text model, creates real 9:16 images, composes the approved text onto every final image, applies quality gates, and exports a ZIP with finished PNG slides, prompts, and a Markdown manifest. It does not publish or schedule content.
+
+## Run
+
+```bash
+npm install
+npm run dev
+```
+
+Open the local URL printed by Vite.
+
+## Verify
+
+```bash
+npm test
+npm run build
+```
+
+## Workflow
+
+1. Enter a concrete topic, audience, lived tension, observation, and source.
+2. Enter an OpenRouter API key in the in-memory password field.
+3. Generate hook candidates, the complete story, and caption with the configurable text model. The default test model is `openai/gpt-5.6-luna`.
+4. Review and edit the selected hook, every frame, caption, and photographic direction.
+5. Generate imagery with `meta/muse-image`. The app then renders the approved copy onto each 1080 × 1920 image using high-contrast typography and safe margins.
+6. Inspect every finished frame and pass the structural quality gate.
+7. Export `slideshow-upload-package.zip`.
+8. Verify claims and visual accuracy, add native audio in TikTok, then publish manually.
+
+## Real image generation
+
+Text generation uses OpenRouter's `POST /api/v1/chat/completions` endpoint and requests schema-constrained hooks, a selected hook, exact frame count, visual directions, and caption. The text-model field is editable and defaults to `openai/gpt-5.6-luna`.
+
+Image generation sends each frame's visual direction plus story context to OpenRouter's `POST /api/v1/images` endpoint. The default image model is `meta/muse-image`. The model is explicitly told not to draw typography. The browser then center-crops the returned image to 9:16, wraps the approved slide copy, renders it in a high-contrast safe-area panel, and exports that composed result as PNG. Editing either the copy or visual invalidates that frame so stale imagery cannot be exported as current.
+
+The API key is held only in React state for the current tab. It is not written to local storage, bundled into the app, or included in exports. For a public deployment, replace browser-side credentials with a small authenticated server endpoint.
+
+If a frame has not been generated, export labels its old local SVG/PNG typography card as `fallback`. The UI never presents that fallback as a real photograph.
+
+## Limits
+
+Research is still entered manually. The deterministic story generator cannot independently prove factual accuracy, taste, cultural timing, or performance. Image models can produce visual errors and inconsistent subjects between frames, so every generated set requires review. There is no Postiz, scheduling, TikTok publishing, or analytics-learning layer.

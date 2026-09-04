@@ -1,0 +1,249 @@
+import { useMemo, useState } from 'react'
+import * as Tabs from '@radix-ui/react-tabs'
+import JSZip from 'jszip'
+import { Check, Clipboard, Download, Lightbulb, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { cn } from './lib/cn'
+import { ensureZipFilename, makeSlides, runQualityGate, scoreIdea, toMarkdown } from './lib/engine'
+import { buildImagePrompt, buildVisualBible, DEFAULT_IMAGE_MODEL, generateImage } from './lib/imageApi'
+import { composeSlideDataUrl } from './lib/compositor'
+import { DEFAULT_TEXT_MODEL, generateStory } from './lib/textApi'
+
+const starterIdeas = [
+  { id: crypto.randomUUID(), hook: 'I published 30 posts before noticing the only metric that mattered', angle: 'Activity versus signal', observation: 'Saves stayed flat while posting volume tripled.', source: 'Personal content log', visualPotential: 5, novelty: 4 },
+  { id: crypto.randomUUID(), hook: 'The SEO advice that quietly kills a new domain', angle: 'Premature scale', observation: 'Publishing more pages created crawl noise before any topic earned traction.', source: 'SEO operating notes', visualPotential: 4, novelty: 5 },
+]
+
+const templates = [
+  ['Contrarian lesson', 'The accepted advice that failed in practice'],
+  ['Before / after', 'One changed variable and the result it produced'],
+  ['Mini teardown', 'Show the weak version, then rebuild it'],
+  ['Field note', 'A concrete observation from work done today'],
+]
+
+function Button({ children, className, variant = 'primary', ...props }) {
+  return <button className={cn('focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45', variant === 'primary' ? 'bg-ink text-white hover:bg-black/80' : 'border border-black/20 bg-white text-ink hover:bg-black/5', className)} {...props}>{children}</button>
+}
+
+function Score({ value }) {
+  const tone = value >= 80 ? 'bg-moss' : value >= 65 ? 'bg-amber-100' : 'bg-red-100'
+  return <span className={cn('rounded-md px-2 py-1 text-sm font-bold tabular-nums', tone)}>{value}/100</span>
+}
+
+function App() {
+  const [ideas, setIdeas] = useState(starterIdeas)
+  const [topic, setTopic] = useState('building an autonomous content engine')
+  const [audience, setAudience] = useState('solo founders')
+  const [angle, setAngle] = useState('I kept trying to automate distribution before the content deserved it')
+  const [observation, setObservation] = useState('The publishing pipe worked, but the generic drafts were not worth publishing.')
+  const [source, setSource] = useState('Internal build notes')
+  const [slideCount, setSlideCount] = useState(5)
+  const [slides, setSlides] = useState(() => makeSlides({ topic, audience, angle, observation, slideCount }))
+  const [caption, setCaption] = useState('Distribution cannot rescue weak content. Build the taste loop first, then automate the pipe.')
+  const [notice, setNotice] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [apiKey, setApiKey] = useState('')
+  const [textModel, setTextModel] = useState(DEFAULT_TEXT_MODEL)
+  const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL)
+  const [generatingText, setGeneratingText] = useState(false)
+  const [generatingImages, setGeneratingImages] = useState(false)
+  const [images, setImages] = useState({})
+  const [reviewedSlides, setReviewedSlides] = useState({})
+  const briefKey = JSON.stringify({ topic, audience, angle, observation, source, slideCount })
+  const [generatedBriefKey, setGeneratedBriefKey] = useState(briefKey)
+  const stale = briefKey !== generatedBriefKey
+  const project = useMemo(() => ({ title: angle || topic, audience, observation, source, slides, caption, stale }), [angle, topic, audience, observation, source, slides, caption, stale])
+  const gate = useMemo(() => runQualityGate(project), [project])
+
+  function generate() {
+    setSlides(makeSlides({ topic, audience, angle, observation, slideCount }))
+    setGeneratedBriefKey(briefKey)
+    setImages({})
+    setReviewedSlides({})
+    setNotice('Local structure regenerated. Use AI story for model-written hooks, slides, and caption.')
+  }
+
+  async function generateAiStory() {
+    if (!apiKey.trim() || generatingText) {
+      setNotice('Add your OpenRouter API key to generate the story.')
+      return
+    }
+    setGeneratingText(true)
+    setNotice(`Generating hooks and a complete story with ${textModel}…`)
+    try {
+      const story = await generateStory({ apiKey, model: textModel, topic, audience, angle, observation, source, slideCount })
+      setAngle(story.selectedHook)
+      setSlides(story.slides)
+      setCaption(story.caption)
+      setImages({})
+      setReviewedSlides({})
+      setGeneratedBriefKey(JSON.stringify({ topic, audience, angle: story.selectedHook, observation, source, slideCount }))
+      setNotice(`Story generated with ${textModel}. Best hook selected from ${story.hooks.length} candidates. Review it, then generate composed images.`)
+    } catch (error) {
+      setNotice(error.message || 'Text generation failed. The existing draft was kept.')
+    } finally {
+      setGeneratingText(false)
+    }
+  }
+
+  function useIdea(idea) {
+    setAngle(idea.hook); setTopic(idea.angle); setObservation(idea.observation); setSource(idea.source)
+    setNotice('Idea moved into Studio. Regenerate the draft to use it.')
+  }
+
+  function updateSlide(id, field, value) {
+    setSlides((current) => current.map((slide) => slide.id === id ? { ...slide, [field]: value } : slide))
+    if (field === 'visual' || field === 'text') setImages((current) => {
+      const previous = current[id]
+      if (previous?.composedUrl) URL.revokeObjectURL(previous.composedUrl)
+      const next = { ...current }; delete next[id]; return next
+    })
+    if (field === 'visual' || field === 'text') setReviewedSlides((current) => { const next = { ...current }; delete next[id]; return next })
+  }
+
+  async function generateImages() {
+    if (!apiKey.trim() || generatingImages) {
+      setNotice('Add your OpenRouter API key to generate real images.')
+      return
+    }
+    setGeneratingImages(true)
+    setNotice('Generating real images one frame at a time…')
+    try {
+      const next = { ...images }
+      const failed = []
+      setReviewedSlides({})
+      const visualBible = buildVisualBible({ topic, title: angle, audience })
+      for (const slide of slides) {
+        try {
+          const prompt = buildImagePrompt(slide, { topic, title: angle, audience }, visualBible)
+          const result = await generateImage({ apiKey, prompt, model: imageModel })
+          const composed = await composeSlideDataUrl({ imageDataUrl: result.dataUrl, text: slide.text })
+          if (next[slide.id]?.composedUrl) URL.revokeObjectURL(next[slide.id].composedUrl)
+          next[slide.id] = { ...result, prompt, composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual }
+          setImages({ ...next })
+        } catch (error) {
+          failed.push(slide.id)
+          break
+        }
+      }
+      if (failed.length) setNotice(`Generation stopped at slide ${failed[0]}. Completed slides were preserved. Retry to finish the missing frames; export remains blocked.`)
+      else setNotice(`${slides.length} finished slides generated. Review and approve every frame before export.`)
+    } catch (error) {
+      setNotice(error.message || 'Image generation failed. Previously generated frames were kept.')
+    } finally {
+      setGeneratingImages(false)
+    }
+  }
+
+  function saveBlob(content, name, type) {
+    const blob = content instanceof Blob ? content : new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = ensureZipFilename(name)
+    link.type = type
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  async function download() {
+    const composedCount = project.slides.filter((slide) => images[slide.id]?.composedBlob && images[slide.id]?.renderedText === slide.text && images[slide.id]?.renderedVisual === slide.visual && reviewedSlides[slide.id]).length
+    if (!gate.passed || exporting || composedCount !== project.slides.length) {
+      setNotice('Generate, inspect, and approve every finished image-and-text slide before export. Raw images and fallback cards are not final output.')
+      return
+    }
+    setExporting(true)
+    try {
+      const zip = new JSZip(); zip.file('slideshow-package.md', toMarkdown(project)); const folder = zip.folder('slides')
+      for (const slide of project.slides) {
+        const generated = images[slide.id]
+        if (generated?.composedBlob && generated.renderedText === slide.text) {
+          folder.file(`slide-${String(slide.id).padStart(2,'0')}.png`, generated.composedBlob)
+          folder.file(`slide-${String(slide.id).padStart(2,'0')}-prompt.txt`, generated.prompt)
+        } else {
+          throw new Error(`Slide ${slide.id} has no current composed image.`)
+        }
+      }
+      const blob = await zip.generateAsync({ type: 'blob' }); saveBlob(blob, 'slideshow-upload-package.zip', 'application/zip')
+      const realCount = project.slides.filter((slide) => images[slide.id]?.composedBlob && images[slide.id]?.renderedText === slide.text && images[slide.id]?.renderedVisual === slide.visual && reviewedSlides[slide.id]).length
+      setNotice(`${realCount} composed image-and-text slides and ${project.slides.length - realCount} labeled fallback cards were exported with the Markdown manifest.`)
+    } catch { setNotice('Export failed. No package was produced. Try again after reducing the slide count.') }
+    finally { setExporting(false) }
+  }
+
+  async function copy() {
+    if (!gate.passed) return
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard is unavailable')
+      await navigator.clipboard.writeText(toMarkdown(project)); setNotice('Package copied to clipboard.')
+    } catch { setNotice('Clipboard access failed. Use Export package instead.') }
+  }
+
+  return (
+    <div className="min-h-dvh bg-paper">
+      <header className="border-b border-black/15 bg-paper">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-lg bg-cobalt text-white"><Sparkles size={20} aria-hidden="true" /></div><div><p className="font-display text-xl font-bold">Slideshow Content Engine</p><p className="text-xs text-black/55">Research, story, real visuals, export</p></div></div>
+          <span className="rounded-full border border-black/15 bg-white px-3 py-1.5 text-xs font-semibold">Local MVP · no publishing</span>
+        </div>
+      </header>
+
+      <main id="main" className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-12">
+        <section className="mb-10 grid gap-8 border-b border-black/15 pb-10 lg:grid-cols-[1.3fr_.7fr] lg:items-end">
+          <div><p className="mb-3 text-sm font-bold text-cobalt">MAKE THE CONTENT WORTH DISTRIBUTING</p><h1 className="max-w-3xl text-balance font-display text-4xl font-bold leading-tight sm:text-6xl">Turn one sharp observation into a complete slideshow.</h1></div>
+          <p className="text-pretty text-lg leading-8 text-black/65">Score the premise, shape the story, reject generic output, then export a package ready for human review and native TikTok finishing.</p>
+        </section>
+
+        <Tabs.Root defaultValue="studio">
+          <Tabs.List aria-label="Content engine sections" className="mb-6 flex gap-1 overflow-x-auto border-b border-black/15">
+            {[['studio','Studio'],['ideas','Idea bank'],['quality','Quality gate']].map(([value,label]) => <Tabs.Trigger key={value} value={value} className="focus-ring border-b-2 border-transparent px-4 py-3 text-sm font-bold text-black/55 data-[state=active]:border-cobalt data-[state=active]:text-ink">{label}</Tabs.Trigger>)}
+          </Tabs.List>
+
+          <Tabs.Content value="studio" className="focus:outline-none">
+            <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+              <aside className="panel self-start p-5 lg:sticky lg:top-4">
+                <h2 className="mb-1 text-xl font-bold">Story brief</h2><p className="mb-6 text-sm text-black/55">Start with a concrete premise, not a broad niche.</p>
+                <label className="label" htmlFor="topic">Topic</label><input id="topic" className="field mb-4" value={topic} onChange={(e) => setTopic(e.target.value)} />
+                <label className="label" htmlFor="audience">Audience</label><input id="audience" className="field mb-4" value={audience} onChange={(e) => setAudience(e.target.value)} />
+                <label className="label" htmlFor="angle">Hook / lived tension</label><textarea id="angle" className="field mb-4 min-h-28 resize-y" value={angle} onChange={(e) => setAngle(e.target.value)} />
+                <label className="label" htmlFor="observation">Research observation</label><textarea id="observation" className="field mb-4 min-h-24 resize-y" value={observation} onChange={(e) => setObservation(e.target.value)} />
+                <label className="label" htmlFor="source">Source URL or note</label><input id="source" className="field mb-4" value={source} onChange={(e) => setSource(e.target.value)} />
+                <label className="label" htmlFor="count">Slide count</label><select id="count" className="field mb-5" value={slideCount} onChange={(e) => setSlideCount(Number(e.target.value))}>{[4,5,6,7,8,9,10].map(n => <option key={n}>{n}</option>)}</select>
+                <Button className="w-full" onClick={generate} disabled={generatingImages || generatingText}><Sparkles size={17} aria-hidden="true" /> Generate local fallback</Button>
+              </aside>
+
+              <section aria-labelledby="slides-title">
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 id="slides-title" className="text-2xl font-bold">Slide editor</h2><p className="text-sm text-black/55">Short copy. One job per frame. Real visual generation included.</p></div><Score value={scoreIdea({ hook: angle, angle: topic, observation, source, visualPotential: 4, novelty: 4 })} /></div>
+                <div className="mb-5 grid gap-3 rounded-xl border border-black/10 bg-white p-4 md:grid-cols-2"><label className="label">OpenRouter API key<input aria-label="OpenRouter API key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-…" autoComplete="off" className="field mt-1 font-normal" /></label><label className="label">Text model<input aria-label="Text model" value={textModel} onChange={(event) => setTextModel(event.target.value)} className="field mt-1 font-normal" /></label><label className="label">Image model<input aria-label="Image model" value={imageModel} onChange={(event) => setImageModel(event.target.value)} className="field mt-1 font-normal" /></label><Button onClick={generateAiStory} disabled={generatingText || generatingImages || !apiKey.trim()} className="self-end">{generatingText ? 'Writing hooks + story…' : 'Generate AI hooks + story'}</Button><Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="md:col-span-2">{generatingImages ? 'Generating + composing…' : 'Generate finished slides: image + text'}</Button><p className="text-xs text-black/55 md:col-span-2">The key remains in memory for this tab and is sent only to OpenRouter. Images are generated without lettering, then the approved slide text is rendered onto each final 1080 × 1920 PNG.</p></div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {slides.map((slide) => <article key={slide.id} className="panel overflow-hidden">
+                    <div className="flex items-center justify-between border-b border-black/10 px-4 py-3"><span className="text-sm font-bold tabular-nums">{String(slide.id).padStart(2,'0')} · {slide.role}</span><span className="text-xs text-black/45">{images[slide.id]?.composedUrl ? 'TEXT ON IMAGE' : `${slide.text.length}/110`}</span></div>
+                    {images[slide.id]?.composedUrl && <><img src={images[slide.id].composedUrl} alt={`Finished slide ${slide.id} with generated visual and text overlay`} className="aspect-[9/16] w-full object-cover" /><label className="flex min-h-11 items-center gap-2 border-t border-black/10 px-4 py-3 text-sm font-bold"><input type="checkbox" checked={Boolean(reviewedSlides[slide.id])} onChange={(event) => setReviewedSlides((current) => ({ ...current, [slide.id]: event.target.checked }))} /> Reviewed and approved</label></>}
+                    <div className="p-4"><label className="sr-only" htmlFor={`slide-${slide.id}`}>Slide {slide.id} copy</label><textarea id={`slide-${slide.id}`} className="field min-h-28 resize-y font-display text-xl font-bold leading-snug" value={slide.text} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'text', e.target.value)} /><label className="label mt-4" htmlFor={`visual-${slide.id}`}>Visual direction</label><input id={`visual-${slide.id}`} className="field" value={slide.visual} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'visual', e.target.value)} /></div>
+                  </article>)}
+                </div>
+                <div className="panel mt-4 p-5"><label className="label" htmlFor="caption">Caption</label><textarea id="caption" className="field min-h-24 resize-y" value={caption} onChange={(e) => setCaption(e.target.value)} /></div>
+                <div className="mt-4 flex flex-wrap justify-end gap-3"><Button variant="secondary" onClick={copy} disabled={!gate.passed}><Clipboard size={17} aria-hidden="true" />Copy manifest</Button><Button onClick={download} disabled={!gate.passed || exporting}><Download size={17} aria-hidden="true" />{exporting ? 'Exporting…' : 'Export package'}</Button></div>
+                {notice && <p role="status" className="mt-3 rounded-lg bg-moss px-4 py-3 text-sm font-semibold">{notice}</p>}
+              </section>
+            </div>
+          </Tabs.Content>
+
+          <Tabs.Content value="ideas" className="focus:outline-none">
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-3xl font-bold">Idea bank</h2><p className="text-black/55">Score specificity, tension, novelty, and visual potential before writing.</p></div><Button onClick={() => setIdeas([...ideas, { id: crypto.randomUUID(), hook: 'A concrete observation from today', angle: 'Why it matters now', observation: '', source: '', visualPotential: 3, novelty: 3 }])}><Plus size={17} aria-hidden="true" /> Add idea</Button></div>
+            <div className="grid gap-4 lg:grid-cols-2">{ideas.map((idea) => <article key={idea.id} className="panel p-5"><div className="mb-4 flex justify-between gap-4"><Lightbulb aria-hidden="true" /><Score value={scoreIdea(idea)} /></div><input aria-label="Idea hook" className="field mb-3 font-bold" value={idea.hook} onChange={(e) => setIdeas(ideas.map(i => i.id === idea.id ? {...i, hook:e.target.value}:i))}/><input aria-label="Idea angle" className="field mb-3" value={idea.angle} onChange={(e) => setIdeas(ideas.map(i => i.id === idea.id ? {...i, angle:e.target.value}:i))}/><textarea aria-label="Research observation" className="field mb-3 min-h-20 resize-y" value={idea.observation} onChange={(e) => setIdeas(ideas.map(i => i.id === idea.id ? {...i, observation:e.target.value}:i))}/><input aria-label="Source URL or note" className="field mb-4" value={idea.source} onChange={(e) => setIdeas(ideas.map(i => i.id === idea.id ? {...i, source:e.target.value}:i))}/><div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-black/50">Visual {idea.visualPotential}/5 · Novelty {idea.novelty}/5</span><div className="flex gap-2"><Button variant="secondary" onClick={() => useIdea(idea)}>Use in Studio</Button><button aria-label="Delete idea" className="focus-ring rounded-md p-2 hover:bg-red-50" onClick={() => setIdeas(ideas.filter(i => i.id !== idea.id))}><Trash2 size={17} aria-hidden="true" /></button></div></div></article>)}</div>
+            <h3 className="mb-3 mt-10 text-xl font-bold">Reliable starting frames</h3><div className="grid gap-3 sm:grid-cols-2">{templates.map(([name,description]) => <div key={name} className="panel p-4"><p className="font-bold">{name}</p><p className="text-sm text-black/55">{description}</p></div>)}</div>
+          </Tabs.Content>
+
+          <Tabs.Content value="quality" className="focus:outline-none">
+            <div className="grid gap-6 lg:grid-cols-[1fr_.8fr]"><section className="panel p-6"><div className="mb-5 flex items-center justify-between"><h2 className="text-3xl font-bold">Pre-export gate</h2><span className={cn('rounded-full px-3 py-1.5 text-sm font-bold', gate.passed ? 'bg-moss' : 'bg-red-100')}>{gate.passed ? 'PASS' : 'BLOCKED'}</span></div>{gate.passed ? <div className="space-y-3">{gate.checks.map(item => <p key={item.label} className="flex items-center gap-3"><Check className="text-green-700" size={18} aria-hidden="true" />{item.label}</p>)}</div> : <ul className="list-disc space-y-2 pl-5 text-red-800">{gate.failures.map(f => <li key={f}>{f}</li>)}</ul>}</section><aside className="rounded-xl bg-ink p-6 text-white"><h3 className="mb-3 font-display text-2xl font-bold">Manual review still matters.</h3><p className="text-pretty leading-7 text-white/70">This gate catches structural weakness. It cannot prove taste, truth, or cultural timing. Read the full sequence aloud, verify every claim, and add native audio inside TikTok before publishing.</p></aside></div>
+          </Tabs.Content>
+        </Tabs.Root>
+      </main>
+    </div>
+  )
+}
+
+export default App

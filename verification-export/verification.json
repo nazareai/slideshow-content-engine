@@ -1,0 +1,53 @@
+{
+  "text_model": "openai/gpt-5.6-luna",
+  "slide_count": 5,
+  "all_png_1080x1920": true,
+  "all_have_overlay_pixel_evidence": true,
+  "slides": [
+    {
+      "file": "slide-01.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 1754377,
+      "sha256": "3f79ee785e70fb09b0e3adff7f9b6fc0258e10410330d239fdf670954f05a346",
+      "overlay_dark_samples": 37702,
+      "overlay_light_samples": 2144
+    },
+    {
+      "file": "slide-02.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 2143152,
+      "sha256": "12ca15c071581b5e851894f8fd5133acc607c2ea5d9bbd2c8924327d3a8236ff",
+      "overlay_dark_samples": 4088,
+      "overlay_light_samples": 2720
+    },
+    {
+      "file": "slide-03.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 1912437,
+      "sha256": "cadcf6e3c8199dc236edb9882b73ab491349efab7092b9149229fcf6237ba8bd",
+      "overlay_dark_samples": 9273,
+      "overlay_light_samples": 12928
+    },
+    {
+      "file": "slide-04.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 2512071,
+      "sha256": "86c43eb12605be668e6f3580b6737b955eaeba9c665606ac2f01adf3774d0043",
+      "overlay_dark_samples": 1923,
+      "overlay_light_samples": 2314
+    },
+    {
+      "file": "slide-05.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 2109130,
+      "sha256": "4a3fc770fd2baeea86a2073b03c0f132b11317ff81c479e3e3d23f660016a939",
+      "overlay_dark_samples": 7102,
+      "overlay_light_samples": 2685
+    }
+  ]
+}

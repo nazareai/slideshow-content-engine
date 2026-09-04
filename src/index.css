@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; font-synthesis: none; }
+html { background: #f7f5f0; }
+body { margin: 0; min-width: 320px; min-height: 100dvh; color: #171717; background: #f7f5f0; }
+button, input, textarea, select { font: inherit; }
+button, [role='tab'] { touch-action: manipulation; }
+::selection { background: #2457ff; color: white; }
+.focus-ring { @apply outline-none focus-visible:ring-2 focus-visible:ring-cobalt focus-visible:ring-offset-2 focus-visible:ring-offset-paper; }
+.label { @apply mb-2 block text-sm font-semibold text-ink; }
+.field { @apply focus-ring min-h-12 w-full rounded-lg border border-black/20 bg-white px-3.5 py-3 text-base placeholder:text-black/40; }
+.panel { @apply rounded-xl border border-black/15 bg-white; }
