@@ -1,6 +1,28 @@
 # Slideshow Content Engine
 
-A local MVP for creating TikTok slideshow packages from sourced observations. It generates and scores hooks, writes editable 4 to 10-frame stories through a configurable OpenRouter text model, creates real 9:16 images, composes the approved text onto every final image, applies quality gates, and exports a ZIP with finished PNG slides, prompts, and a Markdown manifest. It does not publish or schedule content.
+A local MVP for creating TikTok slideshow packages from sourced observations. It generates and scores hooks, writes editable 4 to 10-frame stories through a configurable OpenRouter text model, creates real 9:16 images, art-directs the approved text onto every final image with role-driven compositions and style presets, applies quality gates, and exports a ZIP with finished PNG slides, prompts, a contact sheet, and a Markdown manifest. It does not publish or schedule content.
+
+## Visual direction system
+
+Every slide is composed by `src/lib/artDirection.js` + `src/lib/compositor.js` rather than a single centered text box:
+
+- **Seven composition archetypes**, selected from the slide's narrative role — `impact-stack` (hook: full-bleed image, oversized stacked display type, ghost index numeral, swipe cue), `editorial-split` (setup: asymmetric magazine panel with kicker and accent rule), `evidence-card` (evidence: offset field-note card with quote tick and source footer), `tension-rail` (tension: one-sided scrim with a narrow ragged column on the rail), `spotlight-reveal` (reveal: focal-point-aware radial spotlight with copy in the counter-focal half), `takeaway-ledger` (takeaway: bottom-anchored ledger panel with index badge), and `cta-stamp` (CTA: framed closing card with rotated stamp chip and bookmark glyph).
+- **Sequence rhythm**: `planDirections` guarantees at least five distinct archetypes per set and never repeats a layout back-to-back; repeated archetypes mirror their composition side.
+- **Style presets** that materially change typography and composition, not just color: Bold Impact (900-weight caps, hard panels, highlight-box emphasis), Zine Punch (rotated panels, stroke-outline emphasis, heavy grain), Quiet Documentary (Georgia serif, sentence case, underline emphasis, soft scrims), Field Log (monospace, boxed emphasis, utilitarian spacing). Switching presets re-renders existing frames locally without new image credits.
+- **Model-driven art direction**: the text model returns `layout`, `emphasis`, and `focalPoint` per slide through the response schema; the app validates the metadata (clamping focal points, verifying the emphasis appears in the copy, falling back to role-derived layouts) and renders it deterministically — same input, same pixels.
+- **Mobile safety**: all copy is fitted inside a TikTok-safe region (top search bar, bottom caption/sound area, and the right action rail are avoided); copy that cannot stay readable is rejected rather than shrunk or clipped.
+
+### Visual proof
+
+`contact-sheet.html` (built alongside the app) renders a full generated sequence through the production pipeline over deterministic placeholder photography — one contact sheet per preset plus full-resolution detail frames. Capture it with:
+
+```bash
+npm run build
+npx vite preview --port 4174 --strictPort   # in one terminal
+node scripts/capture-proof.mjs               # writes redesign-proof/*.png
+```
+
+Current captures live in `redesign-proof/`.
 
 ## Run
 
@@ -24,16 +46,16 @@ npm run build
 2. Enter an OpenRouter API key in the in-memory password field.
 3. Generate hook candidates, the complete 4 to 10-frame story, and caption with the configurable text model. Five frames is the manual-aligned default. The default test model is `openai/gpt-5.6-luna`.
 4. Review and edit the selected hook, every frame, caption, and photographic direction.
-5. Generate imagery with `meta/muse-image`. The app then renders the approved copy onto each 1080 × 1920 image using high-contrast typography and safe margins.
-6. Inspect every finished frame and pass the structural quality gate.
-7. Export `slideshow-upload-package.zip`.
+5. Pick a visual style preset. Generate imagery with `meta/muse-image`. The app art-directs the approved copy onto each 1080 × 1920 image using the slide's planned composition, focal point, and emphasis word.
+6. Inspect every finished frame (use the contact sheet to judge sequence rhythm at a glance) and pass the structural quality gate, which also enforces layout diversity.
+7. Export `slideshow-upload-package.zip` — finished slides, prompts, contact sheet, and manifest.
 8. Verify claims and visual accuracy, add native audio in TikTok, then publish manually.
 
 ## Real image generation
 
 Text generation uses OpenRouter's `POST /api/v1/chat/completions` endpoint and requests schema-constrained hooks, a selected hook, exact frame count, visual directions, and caption. The text-model field is editable and defaults to `openai/gpt-5.6-luna`.
 
-Image generation sends each frame's visual direction plus story context to OpenRouter's `POST /api/v1/images` endpoint. The default image model is `meta/muse-image`. The model is explicitly told not to draw typography. The browser then center-crops the returned image to 9:16, wraps the approved slide copy, renders it in a high-contrast safe-area panel, and exports that composed result as PNG. Editing either the copy or visual invalidates that frame so stale imagery cannot be exported as current.
+Image generation sends each frame's visual direction plus story context to OpenRouter's `POST /api/v1/images` endpoint. The default image model is `meta/muse-image`. The model is explicitly told not to draw typography. The browser then crops the returned image to 9:16 biased toward the slide's declared focal point, and renders the approved copy through the slide's planned composition archetype and the active style preset. Editing the copy, the visual, or the preset invalidates that frame's render so stale imagery cannot be exported as current; text and preset edits re-render locally from the stored raw image without a new API call.
 
 The API key is held only in React state for the current tab. It is not written to local storage, bundled into the app, or included in exports. For a public deployment, replace browser-side credentials with a small authenticated server endpoint.
 

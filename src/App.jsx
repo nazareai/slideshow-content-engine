@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import * as Tabs from '@radix-ui/react-tabs'
 import JSZip from 'jszip'
-import { Check, Clipboard, Download, Lightbulb, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { Check, Clipboard, Download, Grid3x3, Lightbulb, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { cn } from './lib/cn'
-import { ensureZipFilename, makeSlides, runQualityGate, scoreIdea, toMarkdown } from './lib/engine'
+import { ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, toMarkdown } from './lib/engine'
 import { buildImagePrompt, buildVisualBible, DEFAULT_IMAGE_MODEL, generateImage } from './lib/imageApi'
-import { composeSlideDataUrl } from './lib/compositor'
+import { composeContactSheet, composeSlideDataUrl, loadImage } from './lib/compositor'
+import { DEFAULT_PRESET_ID, getPreset, STYLE_PRESETS } from './lib/artDirection'
 import { DEFAULT_TEXT_MODEL, generateStory } from './lib/textApi'
 
 const starterIdeas = [
@@ -46,6 +47,7 @@ function App() {
   const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL)
   const [generatingText, setGeneratingText] = useState(false)
   const [generatingImages, setGeneratingImages] = useState(false)
+  const [stylePreset, setStylePreset] = useState(DEFAULT_PRESET_ID)
   const [images, setImages] = useState({})
   const [reviewedSlides, setReviewedSlides] = useState({})
   const briefKey = JSON.stringify({ topic, audience, angle, observation, source, slideCount })
@@ -92,12 +94,50 @@ function App() {
 
   function updateSlide(id, field, value) {
     setSlides((current) => current.map((slide) => slide.id === id ? { ...slide, [field]: value } : slide))
-    if (field === 'visual' || field === 'text') setImages((current) => {
+    if (field === 'visual') setImages((current) => {
       const previous = current[id]
       if (previous?.composedUrl) URL.revokeObjectURL(previous.composedUrl)
       const next = { ...current }; delete next[id]; return next
     })
+    if (field === 'text') setImages((current) => {
+      const previous = current[id]
+      if (!previous) return current
+      if (previous.composedUrl) URL.revokeObjectURL(previous.composedUrl)
+      const { composedBlob, composedUrl, renderedText, renderedVisual, renderedPreset, renderedLayout, ...raw } = previous
+      return { ...current, [id]: raw }
+    })
     if (field === 'visual' || field === 'text') setReviewedSlides((current) => { const next = { ...current }; delete next[id]; return next })
+  }
+
+  // Re-render overlays locally from stored raw images — no new image credits.
+  async function recomposeOverlays(presetId = stylePreset) {
+    const pending = slides.filter((slide) => images[slide.id]?.dataUrl)
+    if (!pending.length || generatingImages || generatingText) return
+    setGeneratingImages(true)
+    setReviewedSlides({})
+    setNotice(`Re-rendering overlays in the ${getPreset(presetId).name} style…`)
+    try {
+      const next = { ...images }
+      for (const slide of pending) {
+        const index = slides.findIndex((entry) => entry.id === slide.id)
+        const composed = await composeSlideDataUrl({ imageDataUrl: next[slide.id].dataUrl, slide, direction: slide.direction, preset: presetId, index, total: slides.length })
+        if (next[slide.id].composedUrl) URL.revokeObjectURL(next[slide.id].composedUrl)
+        next[slide.id] = { ...next[slide.id], composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: presetId, renderedLayout: slide.direction?.layout }
+        setImages({ ...next })
+      }
+      setNotice(`Overlays re-rendered in the ${getPreset(presetId).name} style. Review and approve every frame again before export.`)
+    } catch (error) {
+      setNotice(error.message || 'Overlay re-render failed. Existing frames were kept.')
+    } finally {
+      setGeneratingImages(false)
+    }
+  }
+
+  function changePreset(presetId) {
+    if (presetId === stylePreset) return
+    setStylePreset(presetId)
+    setReviewedSlides({})
+    recomposeOverlays(presetId)
   }
 
   async function generateImages() {
@@ -112,13 +152,13 @@ function App() {
       const failed = []
       setReviewedSlides({})
       const visualBible = buildVisualBible({ topic, title: angle, audience })
-      for (const slide of slides) {
+      for (const [index, slide] of slides.entries()) {
         try {
           const prompt = buildImagePrompt(slide, { topic, title: angle, audience }, visualBible)
           const result = await generateImage({ apiKey, prompt, model: imageModel })
-          const composed = await composeSlideDataUrl({ imageDataUrl: result.dataUrl, text: slide.text })
+          const composed = await composeSlideDataUrl({ imageDataUrl: result.dataUrl, slide, direction: slide.direction, preset: stylePreset, index, total: slides.length })
           if (next[slide.id]?.composedUrl) URL.revokeObjectURL(next[slide.id].composedUrl)
-          next[slide.id] = { ...result, prompt, composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual }
+          next[slide.id] = { ...result, prompt, composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: stylePreset, renderedLayout: slide.direction?.layout }
           setImages({ ...next })
         } catch (error) {
           failed.push(slide.id)
@@ -139,7 +179,7 @@ function App() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = ensureZipFilename(name)
+    link.download = type === 'image/png' ? name : ensureZipFilename(name)
     link.type = type
     link.style.display = 'none'
     document.body.appendChild(link)
@@ -148,10 +188,30 @@ function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
+  async function buildContactSheet() {
+    const ready = project.slides.filter((slide) => images[slide.id]?.composedUrl)
+    if (!ready.length) return null
+    const items = []
+    for (const slide of ready) {
+      const image = await loadImage(images[slide.id].composedUrl)
+      items.push({ image, label: `${String(slide.id).padStart(2, '0')} · ${slide.role} · ${slide.direction?.layout || 'auto'}` })
+    }
+    return composeContactSheet({ items, title: `${(angle || topic).slice(0, 60)} — ${getPreset(stylePreset).name}` })
+  }
+
+  async function downloadContactSheet() {
+    try {
+      const blob = await buildContactSheet()
+      if (!blob) { setNotice('Generate composed slides first — the contact sheet renders from finished frames.'); return }
+      saveBlob(blob, 'contact-sheet.png', 'image/png')
+      setNotice('Contact sheet downloaded. Inspect rhythm and readability across the full sequence at a glance.')
+    } catch { setNotice('Contact sheet export failed. Regenerate the composed frames and retry.') }
+  }
+
   async function download() {
-    const composedCount = project.slides.filter((slide) => images[slide.id]?.composedBlob && images[slide.id]?.renderedText === slide.text && images[slide.id]?.renderedVisual === slide.visual && reviewedSlides[slide.id]).length
-    if (!gate.passed || exporting || composedCount !== project.slides.length) {
-      setNotice('Generate, inspect, and approve every finished image-and-text slide before export. Raw images and fallback cards are not final output.')
+    const readyCount = project.slides.filter((slide) => isRenderCurrent(slide, images[slide.id], stylePreset) && reviewedSlides[slide.id]).length
+    if (!gate.passed || exporting || readyCount !== project.slides.length) {
+      setNotice('Generate, inspect, and approve every finished image-and-text slide before export. Raw images, stale styles, and fallback cards are not final output.')
       return
     }
     setExporting(true)
@@ -159,16 +219,17 @@ function App() {
       const zip = new JSZip(); zip.file('slideshow-package.md', toMarkdown(project)); const folder = zip.folder('slides')
       for (const slide of project.slides) {
         const generated = images[slide.id]
-        if (generated?.composedBlob && generated.renderedText === slide.text) {
+        if (isRenderCurrent(slide, generated, stylePreset)) {
           folder.file(`slide-${String(slide.id).padStart(2,'0')}.png`, generated.composedBlob)
           folder.file(`slide-${String(slide.id).padStart(2,'0')}-prompt.txt`, generated.prompt)
         } else {
           throw new Error(`Slide ${slide.id} has no current composed image.`)
         }
       }
+      const sheet = await buildContactSheet()
+      if (sheet) zip.file('contact-sheet.png', sheet)
       const blob = await zip.generateAsync({ type: 'blob' }); saveBlob(blob, 'slideshow-upload-package.zip', 'application/zip')
-      const realCount = project.slides.filter((slide) => images[slide.id]?.composedBlob && images[slide.id]?.renderedText === slide.text && images[slide.id]?.renderedVisual === slide.visual && reviewedSlides[slide.id]).length
-      setNotice(`${realCount} composed image-and-text slides and ${project.slides.length - realCount} labeled fallback cards were exported with the Markdown manifest.`)
+      setNotice(`${readyCount} composed slides in the ${getPreset(stylePreset).name} style were exported with a contact sheet and the Markdown manifest.`)
     } catch { setNotice('Export failed. No package was produced. Try again after reducing the slide count.') }
     finally { setExporting(false) }
   }
@@ -216,16 +277,29 @@ function App() {
 
               <section aria-labelledby="slides-title">
                 <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 id="slides-title" className="text-2xl font-bold">Slide editor</h2><p className="text-sm text-black/55">Short copy. One job per frame. Real visual generation included.</p></div><Score value={scoreIdea({ hook: angle, angle: topic, observation, source, visualPotential: 4, novelty: 4 })} /></div>
-                <div className="mb-5 grid gap-3 rounded-xl border border-black/10 bg-white p-4 md:grid-cols-2"><label className="label">OpenRouter API key<input aria-label="OpenRouter API key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-…" autoComplete="off" className="field mt-1 font-normal" /></label><label className="label">Text model<input aria-label="Text model" value={textModel} onChange={(event) => setTextModel(event.target.value)} className="field mt-1 font-normal" /></label><label className="label">Image model<input aria-label="Image model" value={imageModel} onChange={(event) => setImageModel(event.target.value)} className="field mt-1 font-normal" /></label><Button onClick={generateAiStory} disabled={generatingText || generatingImages || !apiKey.trim()} className="self-end">{generatingText ? 'Writing hooks + story…' : 'Generate AI hooks + story'}</Button><Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="md:col-span-2">{generatingImages ? 'Generating + composing…' : 'Generate finished slides: image + text'}</Button><p className="text-xs text-black/55 md:col-span-2">The key remains in memory for this tab and is sent only to OpenRouter. Images are generated without lettering, then the approved slide text is rendered onto each final 1080 × 1920 PNG.</p></div>
+                <div className="mb-5 grid gap-3 rounded-xl border border-black/10 bg-white p-4 md:grid-cols-2"><label className="label">OpenRouter API key<input aria-label="OpenRouter API key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-…" autoComplete="off" className="field mt-1 font-normal" /></label><label className="label">Text model<input aria-label="Text model" value={textModel} onChange={(event) => setTextModel(event.target.value)} className="field mt-1 font-normal" /></label><label className="label">Image model<input aria-label="Image model" value={imageModel} onChange={(event) => setImageModel(event.target.value)} className="field mt-1 font-normal" /></label><Button onClick={generateAiStory} disabled={generatingText || generatingImages || !apiKey.trim()} className="self-end">{generatingText ? 'Writing hooks + story…' : 'Generate AI hooks + story'}</Button><Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="md:col-span-2">{generatingImages ? 'Generating + composing…' : 'Generate finished slides: image + text'}</Button><p className="text-xs text-black/55 md:col-span-2">The key remains in memory for this tab and is sent only to OpenRouter. Images are generated without lettering, then the approved slide text is art-directed onto each final 1080 × 1920 PNG.</p></div>
+                <div className="mb-5 rounded-xl border border-black/10 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3"><span className="label mb-0">Visual style preset</span><Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={() => recomposeOverlays()} disabled={generatingImages || generatingText || !slides.some((slide) => images[slide.id]?.dataUrl)}>Re-render overlays</Button></div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="radiogroup" aria-label="Visual style preset">
+                    {STYLE_PRESETS.map((preset) => (
+                      <button key={preset.id} role="radio" aria-checked={stylePreset === preset.id} onClick={() => changePreset(preset.id)} disabled={generatingImages || generatingText}
+                        className={cn('focus-ring rounded-lg border p-3 text-left transition-colors', stylePreset === preset.id ? 'border-cobalt bg-cobalt/5 ring-1 ring-cobalt' : 'border-black/15 hover:bg-black/5')}>
+                        <p className="text-sm font-bold">{preset.name}</p>
+                        <p className="mt-1 text-xs leading-5 text-black/55">{preset.blurb}</p>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-black/55">Presets change typography, composition, and texture per narrative role — not just colors. Switching re-renders existing frames locally without spending image credits. Each slide gets one of seven compositions (impact stack, editorial split, evidence card, tension rail, spotlight reveal, takeaway ledger, CTA stamp) chosen from its narrative job, with no layout repeated back-to-back.</p>
+                </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   {slides.map((slide) => <article key={slide.id} className="panel overflow-hidden">
-                    <div className="flex items-center justify-between border-b border-black/10 px-4 py-3"><span className="text-sm font-bold tabular-nums">{String(slide.id).padStart(2,'0')} · {slide.role}</span><span className="text-xs text-black/45">{images[slide.id]?.composedUrl ? 'TEXT ON IMAGE' : `${slide.text.length}/110`}</span></div>
+                    <div className="flex items-center justify-between gap-2 border-b border-black/10 px-4 py-3"><span className="flex min-w-0 items-center gap-2 text-sm font-bold tabular-nums">{String(slide.id).padStart(2,'0')} · {slide.role}{slide.direction?.layout && <span className="truncate rounded bg-black/5 px-1.5 py-0.5 text-[11px] font-semibold text-black/60">{slide.direction.layout}{slide.direction.mirror ? ' ⇋' : ''}</span>}</span><span className="shrink-0 text-xs text-black/45">{images[slide.id]?.composedUrl ? 'TEXT ON IMAGE' : `${slide.text.length}/110`}</span></div>
                     {images[slide.id]?.composedUrl && <><img src={images[slide.id].composedUrl} alt={`Finished slide ${slide.id} with generated visual and text overlay`} className="aspect-[9/16] w-full object-cover" /><label className="flex min-h-11 items-center gap-2 border-t border-black/10 px-4 py-3 text-sm font-bold"><input type="checkbox" checked={Boolean(reviewedSlides[slide.id])} onChange={(event) => setReviewedSlides((current) => ({ ...current, [slide.id]: event.target.checked }))} /> Reviewed and approved</label></>}
                     <div className="p-4"><label className="sr-only" htmlFor={`slide-${slide.id}`}>Slide {slide.id} copy</label><textarea id={`slide-${slide.id}`} className="field min-h-28 resize-y font-display text-xl font-bold leading-snug" value={slide.text} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'text', e.target.value)} /><label className="label mt-4" htmlFor={`visual-${slide.id}`}>Visual direction</label><input id={`visual-${slide.id}`} className="field" value={slide.visual} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'visual', e.target.value)} /></div>
                   </article>)}
                 </div>
                 <div className="panel mt-4 p-5"><label className="label" htmlFor="caption">Caption</label><textarea id="caption" className="field min-h-24 resize-y" value={caption} onChange={(e) => setCaption(e.target.value)} /></div>
-                <div className="mt-4 flex flex-wrap justify-end gap-3"><Button variant="secondary" onClick={copy} disabled={!gate.passed}><Clipboard size={17} aria-hidden="true" />Copy manifest</Button><Button onClick={download} disabled={!gate.passed || exporting}><Download size={17} aria-hidden="true" />{exporting ? 'Exporting…' : 'Export package'}</Button></div>
+                <div className="mt-4 flex flex-wrap justify-end gap-3"><Button variant="secondary" onClick={copy} disabled={!gate.passed}><Clipboard size={17} aria-hidden="true" />Copy manifest</Button><Button variant="secondary" onClick={downloadContactSheet} disabled={!slides.some((slide) => images[slide.id]?.composedUrl)}><Grid3x3 size={17} aria-hidden="true" />Contact sheet</Button><Button onClick={download} disabled={!gate.passed || exporting}><Download size={17} aria-hidden="true" />{exporting ? 'Exporting…' : 'Export package'}</Button></div>
                 {notice && <p role="status" className="mt-3 rounded-lg bg-moss px-4 py-3 text-sm font-semibold">{notice}</p>}
               </section>
             </div>

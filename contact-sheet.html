@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visual direction proof — contact sheets</title>
+    <style>
+      body { margin: 0; background: #0c0c0f; color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      main { padding: 24px; }
+      h1 { font-size: 26px; margin: 0 0 6px; }
+      p.note { color: rgba(255,255,255,0.6); font-size: 14px; margin: 0 0 20px; max-width: 1200px; }
+      section { margin-bottom: 34px; }
+      img.sheet { display: block; width: 1508px; height: auto; border: 1px solid rgba(255,255,255,0.15); }
+      .detail { display: grid; grid-template-columns: repeat(4, 540px); gap: 16px; }
+      .detail img { width: 540px; height: 960px; border: 1px solid rgba(255,255,255,0.15); }
+      #status { font-size: 13px; color: #9be941; padding: 8px 0 20px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Slideshow visual-direction proof</h1>
+      <p class="note">Rendered by the production art-direction pipeline (makeSlides → planDirections → composeSlide) over deterministic placeholder photography. Every frame is a real 1080×1920 composited PNG; one contact sheet per style preset, then full-arc detail frames for the default preset.</p>
+      <div id="status">Rendering…</div>
+      <div id="root"></div>
+    </main>
+    <script type="module" src="/src/contactSheet.js"></script>
+  </body>
+</html>

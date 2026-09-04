@@ -11,12 +11,12 @@ const validStory = {
   ],
   selectedHook: 'I automated distribution before the content deserved it',
   slides: [
-    { role: 'Hook', text: 'I automated distribution before the content deserved it', visual: 'Founder looking at an empty analytics dashboard at night' },
-    { role: 'Context', text: 'The pipeline shipped every draft on time.', visual: 'Automated conveyor moving identical paper sheets' },
-    { role: 'Tension', text: 'Nobody wanted to save any of them.', visual: 'Phone screen with flat save activity beside discarded notes' },
-    { role: 'Evidence', text: 'Publishing worked. Taste was the bottleneck.', visual: 'Two labeled workshop stations, one moving and one stalled' },
-    { role: 'Shift', text: 'So I stopped scaling output.', visual: 'Hand switching off a large production machine' },
-    { role: 'Payoff', text: 'Now every idea must earn distribution.', visual: 'Single marked card passing through a quality gate' },
+    { role: 'Hook', text: 'I automated distribution before the content deserved it', visual: 'Founder looking at an empty analytics dashboard at night', layout: 'impact-stack', emphasis: 'deserved', focalPoint: { x: 0.5, y: 0.55 } },
+    { role: 'Context', text: 'The pipeline shipped every draft on time.', visual: 'Automated conveyor moving identical paper sheets', layout: 'editorial-split', emphasis: 'pipeline', focalPoint: { x: 0.5, y: 0.35 } },
+    { role: 'Tension', text: 'Nobody wanted to save any of them.', visual: 'Phone screen with flat save activity beside discarded notes', layout: 'tension-rail', emphasis: 'Nobody', focalPoint: { x: 0.7, y: 0.4 } },
+    { role: 'Evidence', text: 'Publishing worked. Taste was the bottleneck.', visual: 'Two labeled workshop stations, one moving and one stalled', layout: 'evidence-card', emphasis: 'bottleneck', focalPoint: { x: 0.6, y: 0.3 } },
+    { role: 'Shift', text: 'So I stopped scaling output.', visual: 'Hand switching off a large production machine', layout: 'spotlight-reveal', emphasis: 'stopped', focalPoint: { x: 0.5, y: 0.3 } },
+    { role: 'Payoff', text: 'Now every idea must earn distribution.', visual: 'Single marked card passing through a quality gate', layout: 'takeaway-ledger', emphasis: 'earn', focalPoint: { x: 0.5, y: 0.3 } },
   ],
   caption: 'Distribution cannot rescue weak content. Build the taste loop first.'
 }
@@ -39,6 +39,43 @@ describe('OpenRouter text generation', () => {
       method: 'POST',
       body: expect.stringContaining('openai/gpt-5.6-luna'),
     }))
+    const requestBody = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    expect(requestBody.response_format.json_schema.schema.properties.slides.items.required).toEqual(expect.arrayContaining(['layout', 'emphasis', 'focalPoint']))
+    expect(requestBody.response_format.json_schema.schema.properties.slides.items.properties.layout.enum).toContain('impact-stack')
+    expect(requestBody.messages[0].content).toContain('focalPoint')
+  })
+
+  it('attaches validated art direction to every slide from the model metadata', () => {
+    const story = parseStoryResponse({ choices: [{ message: { content: JSON.stringify(validStory) } }] }, 6)
+    expect(story.slides.every((slide) => slide.direction?.layout && slide.direction.focalPoint && typeof slide.direction.mirror === 'boolean')).toBe(true)
+    expect(story.slides[0].direction.layout).toBe('impact-stack')
+    expect(story.slides[3].direction.emphasis).toBe('bottleneck')
+    expect(story.slides[2].direction.focalPoint).toEqual({ x: 0.7, y: 0.4 })
+  })
+
+  it('derives art direction instead of failing when the model returns junk metadata', () => {
+    const junk = {
+      ...validStory,
+      slides: validStory.slides.map((slide) => ({ ...slide, layout: 'centered-text-box', emphasis: 'wordnotinslide', focalPoint: { x: 40, y: -2 } })),
+    }
+    const story = parseStoryResponse({ choices: [{ message: { content: JSON.stringify(junk) } }] }, 6)
+    expect(story.slides[0].direction.layout).toBe('impact-stack')
+    story.slides.forEach((slide) => {
+      expect(slide.direction.focalPoint.x).toBeLessThanOrEqual(0.88)
+      expect(slide.direction.focalPoint.y).toBeGreaterThanOrEqual(0.12)
+      expect(slide.text.toLowerCase()).toContain(slide.direction.emphasis.toLowerCase())
+    })
+  })
+
+  it('repairs a monotone layout sequence into a diverse, non-repeating rhythm', () => {
+    const monotone = {
+      ...validStory,
+      slides: validStory.slides.map((slide) => ({ ...slide, layout: 'editorial-split' })),
+    }
+    const story = parseStoryResponse({ choices: [{ message: { content: JSON.stringify(monotone) } }] }, 6)
+    const layouts = story.slides.map((slide) => slide.direction.layout)
+    layouts.forEach((layout, index) => { if (index > 0) expect(layout).not.toBe(layouts[index - 1]) })
+    expect(new Set(layouts).size).toBeGreaterThanOrEqual(5)
   })
 
   it('rejects malformed output instead of silently using incomplete slides', () => {

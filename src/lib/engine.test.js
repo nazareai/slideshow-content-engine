@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ensureZipFilename, makeSlides, runQualityGate, scoreIdea, slideToSvg, toMarkdown } from './engine'
+import { ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, sequenceIsDiverse, slideToSvg, toMarkdown } from './engine'
 
 const input = { topic: 'SEO', audience: 'founders', angle: 'Why qualified search traffic suddenly stalls', observation: 'Three pages ranked, but none converted.', slideCount: 7 }
 const validProject = () => ({ title: input.angle, audience: input.audience, observation: input.observation, source: 'https://example.com', slides: makeSlides(input), caption: 'A practical test worth saving.', stale: false })
@@ -15,6 +15,43 @@ describe('content engine', () => {
     const slides = makeSlides({ ...input, slideCount: count })
     expect(slides).toHaveLength(count)
     expect(slides.at(-1).role).toBe('CTA')
+  })
+
+  it.each([4, 5, 6, 7, 8, 9, 10])('art-directs every slide of a %i-slide arc with a diverse layout rhythm', (count) => {
+    const slides = makeSlides({ ...input, slideCount: count })
+    expect(slides.every((slide) => slide.direction?.layout && slide.direction.focalPoint && slide.direction.emphasis)).toBe(true)
+    const layouts = slides.map((slide) => slide.direction.layout)
+    layouts.forEach((layout, index) => { if (index > 0) expect(layout).not.toBe(layouts[index - 1]) })
+    expect(new Set(layouts).size).toBeGreaterThanOrEqual(Math.min(5, count))
+    expect(slides.at(-1).direction.layout).toBe('cta-stamp')
+    expect(slides[0].direction.layout).toBe('impact-stack')
+  })
+
+  it('fails the quality gate when compositions repeat instead of alternating', () => {
+    const project = validProject()
+    project.slides = project.slides.map((slide) => ({ ...slide, direction: { ...slide.direction, layout: 'evidence-card' } }))
+    expect(sequenceIsDiverse(project.slides)).toBe(false)
+    const gate = runQualityGate(project)
+    expect(gate.passed).toBe(false)
+    expect(gate.failures.some((failure) => failure.includes('diverse'))).toBe(true)
+  })
+
+  it('treats a render as current only when copy, visual, layout, and preset all match', () => {
+    const slide = { text: 'The observed slide copy', visual: 'One scene', direction: { layout: 'evidence-card' } }
+    const rendered = { composedBlob: {}, renderedText: 'The observed slide copy', renderedVisual: 'One scene', renderedPreset: 'impact', renderedLayout: 'evidence-card' }
+    expect(isRenderCurrent(slide, rendered, 'impact')).toBe(true)
+    expect(isRenderCurrent(slide, rendered, 'zine')).toBe(false)
+    expect(isRenderCurrent(slide, { ...rendered, renderedText: 'Edited copy' }, 'impact')).toBe(false)
+    expect(isRenderCurrent(slide, { ...rendered, renderedVisual: 'Other scene' }, 'impact')).toBe(false)
+    expect(isRenderCurrent(slide, { ...rendered, renderedLayout: 'impact-stack' }, 'impact')).toBe(false)
+    expect(isRenderCurrent(slide, { ...rendered, composedBlob: null }, 'impact')).toBe(false)
+    expect(isRenderCurrent(slide, undefined, 'impact')).toBe(false)
+  })
+
+  it('records the composition and emphasis in the exported manifest', () => {
+    const markdown = toMarkdown(validProject())
+    expect(markdown).toContain('_Composition: impact-stack')
+    expect(markdown).toContain('emphasis:')
   })
   it('rewards specificity, tension, and sourced observations', () => {
     expect(scoreIdea({ hook: 'I wasted 14 days before fixing this', observation: 'Bounce rate rose 20%', source: 'https://example.com', visualPotential: 5, novelty: 5 })).toBeGreaterThan(90)

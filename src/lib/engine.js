@@ -1,3 +1,5 @@
+import { planDirections } from './artDirection'
+
 const weakWords = ['ultimate', 'revolutionary', 'game-changing', 'unlock', 'secret hack']
 const palettes = [
   ['#171717', '#F7F5F0', '#D9EDC2'],
@@ -47,7 +49,30 @@ export function makeSlides({ topic, audience, angle, observation, slideCount }) 
   ]
   const cta = { role: 'CTA', text: `Save this before your next ${subject} decision.`, visual: `A clean final frame with one save cue and generous space` }
   const middle = count <= 6 ? core.slice(0, count - 1) : [...core, ...optional.slice(0, count - 7)]
-  return [...middle, cta].map((slide, index) => ({ ...slide, id: index + 1 }))
+  const slides = [...middle, cta].map((slide, index) => ({ ...slide, id: index + 1 }))
+  const directions = planDirections(slides)
+  return slides.map((slide, index) => ({ ...slide, direction: directions[index] }))
+}
+
+// True when the stored render still matches the slide copy, visual direction,
+// planned composition, and active style preset — otherwise export is stale.
+export function isRenderCurrent(slide, rendered, presetId) {
+  if (!rendered?.composedBlob) return false
+  return rendered.renderedText === slide.text && rendered.renderedVisual === slide.visual &&
+    rendered.renderedPreset === presetId &&
+    (!slide.direction?.layout || rendered.renderedLayout === slide.direction.layout)
+}
+
+// The composed sequence must read as an art-directed set: at least
+// min(5, n) distinct compositions and never the same layout twice in a row.
+export function sequenceIsDiverse(slides = []) {
+  if (!slides.length) return false
+  const layouts = slides.every((slide) => clean(slide?.direction?.layout))
+    ? slides.map((slide) => slide.direction.layout)
+    : planDirections(slides).map((direction) => direction.layout)
+  const distinct = new Set(layouts).size
+  const noAdjacentRepeat = layouts.every((layout, index) => index === 0 || layout !== layouts[index - 1])
+  return distinct >= Math.min(5, layouts.length) && noAdjacentRepeat
 }
 
 export function runQualityGate(project = {}) {
@@ -58,6 +83,7 @@ export function runQualityGate(project = {}) {
     { label: 'Every slide has visual direction', passed: slides.length > 0 && slides.every((s) => clean(s?.visual)) },
     { label: 'Copy is 4 to 16 readable words', passed: slides.length > 0 && slides.every((s) => { const words = clean(s?.text).split(/\s+/).filter(Boolean); return words.length >= 4 && words.length <= 16 && clean(s?.text).length <= 110 && words.every((word) => word.length <= 24) }) },
     { label: 'No generic marketing language', passed: !weakWords.some((word) => slides.some((s) => clean(s?.text).toLowerCase().includes(word))) },
+    { label: 'Slide compositions are diverse (no repeated layout in a row, 5+ archetypes)', passed: sequenceIsDiverse(slides) },
     { label: 'Caption is present', passed: Boolean(clean(project.caption)) },
     { label: 'Research observation is present', passed: Boolean(clean(project.observation)) },
     { label: 'Research source is present', passed: Boolean(clean(project.source)) },
@@ -69,7 +95,7 @@ export function runQualityGate(project = {}) {
 
 export function toMarkdown(project) {
   const gate = runQualityGate(project)
-  return `# ${clean(project.title) || 'Slideshow'}\n\n**Audience:** ${clean(project.audience)}\n**Status:** ${gate.passed ? 'Ready for manual review' : 'Needs revision'}\n\n## Research basis\n\n${clean(project.observation) || 'No research note supplied.'}\n\nSource: ${clean(project.source) || 'Not supplied'}\n\n## Slides\n\n${(project.slides || []).map((slide) => `### ${slide.id}. ${slide.role}\n\n${slide.text}\n\n_Visual direction: ${slide.visual}_`).join('\n\n')}\n\n## Caption\n\n${clean(project.caption)}\n\n## Quality gate\n\n${gate.checks.map((check) => `- [${check.passed ? 'x' : ' '}] ${check.label}`).join('\n')}\n\n## Publishing note\n\nThe package contains real generated image assets when every frame has been rendered. Verify claims and visual accuracy, add native text or audio if wanted, and publish manually.\n`
+  return `# ${clean(project.title) || 'Slideshow'}\n\n**Audience:** ${clean(project.audience)}\n**Status:** ${gate.passed ? 'Ready for manual review' : 'Needs revision'}\n\n## Research basis\n\n${clean(project.observation) || 'No research note supplied.'}\n\nSource: ${clean(project.source) || 'Not supplied'}\n\n## Slides\n\n${(project.slides || []).map((slide) => `### ${slide.id}. ${slide.role}\n\n${slide.text}\n\n_Visual direction: ${slide.visual}_${slide.direction?.layout ? `\n\n_Composition: ${slide.direction.layout}${slide.direction.mirror ? ' (mirrored)' : ''} · emphasis: ${slide.direction.emphasis || '—'}_` : ''}`).join('\n\n')}\n\n## Caption\n\n${clean(project.caption)}\n\n## Quality gate\n\n${gate.checks.map((check) => `- [${check.passed ? 'x' : ' '}] ${check.label}`).join('\n')}\n\n## Publishing note\n\nThe package contains real generated image assets when every frame has been rendered. Verify claims and visual accuracy, add native text or audio if wanted, and publish manually.\n`
 }
 
 function escapeXml(value) {

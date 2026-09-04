@@ -1,3 +1,5 @@
+import { LAYOUT_IDS, LAYOUTS, planDirections } from './artDirection'
+
 const TEXT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'
 export const DEFAULT_TEXT_MODEL = 'openai/gpt-5.6-luna'
 
@@ -23,7 +25,21 @@ function storySchema(slideCount) {
         selectedHook: { type: 'string' },
         slides: {
           type: 'array', minItems: slideCount, maxItems: slideCount,
-          items: { type: 'object', additionalProperties: false, required: ['role', 'text', 'visual'], properties: { role: { type: 'string' }, text: { type: 'string' }, visual: { type: 'string' } } },
+          items: {
+            type: 'object', additionalProperties: false,
+            required: ['role', 'text', 'visual', 'layout', 'emphasis', 'focalPoint'],
+            properties: {
+              role: { type: 'string' },
+              text: { type: 'string' },
+              visual: { type: 'string' },
+              layout: { type: 'string', enum: [...LAYOUT_IDS] },
+              emphasis: { type: 'string' },
+              focalPoint: {
+                type: 'object', additionalProperties: false, required: ['x', 'y'],
+                properties: { x: { type: 'number', minimum: 0, maximum: 1 }, y: { type: 'number', minimum: 0, maximum: 1 } },
+              },
+            },
+          },
         },
         caption: { type: 'string' },
       },
@@ -47,10 +63,15 @@ export function parseStoryResponse(result, slideCount) {
   const bestHook = validHooks ? story.hooks.reduce((best, hook) => hook.score > best.score ? hook : best) : null
   const complete = validHooks && clean(story.selectedHook) === clean(bestHook?.text) && validSlides && clean(story.caption)
   if (!complete) throw new Error(`OpenRouter did not return a complete story with exactly ${slideCount} slides.`)
+  const slides = story.slides.map((slide, index) => ({
+    id: index + 1, role: clean(slide.role), text: clean(slide.text), visual: clean(slide.visual),
+    direction: { layout: slide.layout, emphasis: slide.emphasis, focalPoint: slide.focalPoint },
+  }))
+  const directions = planDirections(slides)
   return {
     hooks: story.hooks.map((hook) => ({ text: clean(hook.text), score: Number(hook.score) || 0 })),
     selectedHook: clean(story.selectedHook),
-    slides: story.slides.map((slide, index) => ({ id: index + 1, role: clean(slide.role), text: clean(slide.text), visual: clean(slide.visual) })),
+    slides: slides.map((slide, index) => ({ ...slide, direction: directions[index] })),
     caption: clean(story.caption),
   }
 }
@@ -77,7 +98,7 @@ export async function generateStory({ apiKey, model = DEFAULT_TEXT_MODEL, topic,
       messages: [
         {
           role: 'system',
-          content: `You write evidence-grounded TikTok slideshow stories. Generate distinct hooks, score them for curiosity, specificity, credibility, and visual potential, select the strongest, and write exactly ${slideCount} frames. Each frame must contain one idea, no paragraph, normally 4-16 words, and create a reason to swipe. Use a Hook, Context, Tension, Evidence, Shift, Payoff, CTA arc as space permits. Never invent facts beyond the supplied observation. Every visual direction must describe one concrete photorealistic vertical scene with negative space for an overlay. Return only schema-valid JSON.`,
+          content: `You write evidence-grounded TikTok slideshow stories and art-direct every frame. Generate distinct hooks, score them for curiosity, specificity, credibility, and visual potential, select the strongest, and write exactly ${slideCount} frames. Each frame must contain one idea, no paragraph, normally 4-16 words, and create a reason to swipe. Use a Hook, Context, Tension, Evidence, Shift, Payoff, CTA arc as space permits. Never invent facts beyond the supplied observation. Every visual direction must describe one concrete photorealistic vertical scene with negative space for an overlay. Per frame also return art-direction metadata: "layout" chosen from ${LAYOUT_IDS.join(', ')} to match the frame's narrative job (${LAYOUT_IDS.map((id) => `${id} = ${LAYOUTS[id].role}`).join(', ')}); "emphasis" — the single most loaded word copied verbatim from that frame's text; "focalPoint" — where the described scene's subject sits in the 9:16 frame as {x, y} fractions from top-left, so the overlay can avoid it. Vary layouts across the sequence; never use the same layout twice in a row. Return only schema-valid JSON.`,
         },
         {
           role: 'user',
