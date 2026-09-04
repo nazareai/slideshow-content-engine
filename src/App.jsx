@@ -53,6 +53,7 @@ function App() {
   const [customStyleText, setCustomStyleText] = useState('')
   const [images, setImages] = useState({})
   const [reviewedSlides, setReviewedSlides] = useState({})
+  const [generationReceipt, setGenerationReceipt] = useState(null)
   const imageStyle = useMemo(() => resolveImageStyle({ styleId: imageStyleId, customText: customStyleText }), [imageStyleId, customStyleText])
   const briefKey = JSON.stringify({ topic, audience, angle, observation, source, slideCount })
   const [generatedBriefKey, setGeneratedBriefKey] = useState(briefKey)
@@ -65,6 +66,7 @@ function App() {
     setGeneratedBriefKey(briefKey)
     setImages({})
     setReviewedSlides({})
+    setGenerationReceipt(null)
     setNotice('Local structure regenerated. Use AI story for model-written hooks, slides, and caption.')
   }
 
@@ -82,6 +84,14 @@ function App() {
       setCaption(story.caption)
       setImages({})
       setReviewedSlides({})
+      setGenerationReceipt({
+        selectedStyle: imageStyle.name,
+        styleId: imageStyle.id,
+        textModel,
+        lunaDirections: story.slides.map((slide) => ({ id: slide.id, role: slide.role, visual: slide.visual })),
+        museRequests: [],
+        completedSlides: 0,
+      })
       setGeneratedBriefKey(JSON.stringify({ topic, audience, angle: story.selectedHook, observation, source, slideCount }))
       setNotice(`Story generated with ${textModel}. Best hook selected from ${story.hooks.length} candidates. Review it, then generate composed images.`)
     } catch (error) {
@@ -150,6 +160,7 @@ function App() {
   function changeImageStyle(styleId) {
     if (styleId === imageStyleId) return
     setImageStyleId(styleId)
+    setGenerationReceipt(null)
     const hasFrames = slides.some((slide) => images[slide.id]?.dataUrl)
     const name = getImageStyle(styleId).name
     setNotice(hasFrames
@@ -177,6 +188,17 @@ function App() {
           if (next[slide.id]?.composedUrl) URL.revokeObjectURL(next[slide.id].composedUrl)
           next[slide.id] = { ...result, prompt, renderedStyleId: imageStyle.id, renderedStyleDirective: imageStyle.directive, composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: stylePreset, renderedLayout: slide.direction?.layout }
           setImages({ ...next })
+          setGenerationReceipt((current) => ({
+            selectedStyle: imageStyle.name,
+            styleId: imageStyle.id,
+            textModel,
+            lunaDirections: current?.lunaDirections || slides.map((entry) => ({ id: entry.id, role: entry.role, visual: entry.visual })),
+            museRequests: [
+              ...(current?.museRequests || []).filter((entry) => entry.id !== slide.id),
+              { id: slide.id, model: imageModel, prompt },
+            ],
+            completedSlides: Object.values(next).filter((entry) => entry?.composedUrl).length,
+          }))
         } catch (error) {
           failed.push(slide.id)
           break
@@ -342,6 +364,18 @@ function App() {
                   </div>
                   <p className="mt-3 text-xs text-black/55">Design presets change the text overlay: typography, composition, and texture per narrative role — independent of the image generation style above. Switching re-renders existing frames locally without spending image credits. Each slide gets one of seven compositions (impact stack, editorial split, evidence card, tension rail, spotlight reveal, takeaway ledger, CTA stamp) chosen from its narrative job, with no layout repeated back-to-back.</p>
                 </div>
+                {generationReceipt && (
+                  <section aria-label="Generation receipt" className="mb-5 rounded-xl border border-cobalt/25 bg-cobalt/5 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div><p className="label mb-0 text-cobalt">Runtime generation receipt</p><h3 className="text-lg font-bold">{generationReceipt.selectedStyle} propagated end to end</h3></div>
+                      <span className="rounded-md bg-white px-2 py-1 text-xs font-bold">{generationReceipt.completedSlides}/{slides.length} composed</span>
+                    </div>
+                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                      <div className="rounded-lg bg-white p-3"><p className="text-xs font-bold uppercase tracking-wide text-black/45">Luna visual direction</p><p className="mt-1 text-sm leading-6">{generationReceipt.lunaDirections[0]?.visual}</p></div>
+                      <div className="rounded-lg bg-white p-3"><p className="text-xs font-bold uppercase tracking-wide text-black/45">Exact Muse payload · {generationReceipt.museRequests[0]?.model || imageModel}</p><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs leading-5">{generationReceipt.museRequests[0]?.prompt || 'Generate images to capture the downstream payload.'}</pre></div>
+                    </div>
+                  </section>
+                )}
                 <div className="grid gap-4 md:grid-cols-2">
                   {slides.map((slide) => <article key={slide.id} className="panel overflow-hidden">
                     <div className="flex items-center justify-between gap-2 border-b border-black/10 px-4 py-3"><span className="flex min-w-0 items-center gap-2 text-sm font-bold tabular-nums">{String(slide.id).padStart(2,'0')} · {slide.role}{slide.direction?.layout && <span className="truncate rounded bg-black/5 px-1.5 py-0.5 text-[11px] font-semibold text-black/60">{slide.direction.layout}{slide.direction.mirror ? ' ⇋' : ''}</span>}</span><span className="shrink-0 text-xs text-black/45">{images[slide.id]?.composedUrl ? 'TEXT ON IMAGE' : `${slide.text.length}/110`}</span></div>

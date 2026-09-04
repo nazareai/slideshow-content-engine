@@ -9,6 +9,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 if (!globalThis.crypto) globalThis.crypto = webcrypto
 if (!globalThis.crypto.randomUUID) globalThis.crypto.randomUUID = randomUUID
 
+vi.mock('./lib/compositor', () => ({
+  composeSlideDataUrl: vi.fn(async () => ({ blob: new Blob(['png']), dataUrl: 'data:image/png;base64,cG5n' })),
+  composeContactSheet: vi.fn(async () => new Blob(['sheet'])),
+  loadImage: vi.fn(async () => ({ naturalWidth: 1080, naturalHeight: 1920 })),
+}))
+
 const { default: App } = await import('./App.jsx')
 
 function setFieldValue(element, value) {
@@ -139,6 +145,43 @@ describe('image style selection in the app', () => {
     expect(systemPrompt).toContain('Chunky low-resolution pixel art')
     expect(systemPrompt).not.toMatch(/photorealistic/i)
     expect(systemPrompt).not.toContain('concrete photorealistic vertical scene')
+  })
+
+  it('shows a provenance-bound runtime receipt after story and image generation', async () => {
+    const hooks = Array.from({ length: 5 }, (_, index) => ({ text: `Brainrot hook candidate ${index} worth testing now`, score: 70 + index }))
+    const storyResponse = {
+      hooks,
+      selectedHook: hooks[4].text,
+      slides: Array.from({ length: 5 }, (_, index) => ({
+        role: index === 0 ? 'Hook' : 'Context',
+        text: `Slide ${index + 1} makes one concrete point`,
+        visual: `A toaster-lion hybrid in absurd arena scene ${index + 1}`,
+        layout: index === 0 ? 'impact-stack' : 'editorial-split',
+        emphasis: 'concrete',
+        focalPoint: { x: 0.5, y: 0.6 },
+      })),
+      caption: 'The pipeline receipt proves the selected medium.',
+    }
+    const fetchSpy = vi.fn(async (url) => url.includes('/chat/completions')
+      ? { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(storyResponse) } }] }) }
+      : { ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await act(async () => byRole(imageStyleGroup(), 'Surreal Brainrot').click())
+    await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
+    const storyButton = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Generate AI hooks + story'))
+    await act(async () => storyButton.click())
+    await flush()
+    await act(async () => generateButton().click())
+    await flush()
+
+    const receipt = document.querySelector('section[aria-label="Generation receipt"]')
+    expect(receipt).toBeTruthy()
+    expect(receipt.textContent).toContain('Surreal Brainrot propagated end to end')
+    expect(receipt.textContent).toContain('A toaster-lion hybrid in absurd arena scene 1')
+    expect(receipt.textContent).toContain('Exact Muse payload')
+    expect(receipt.textContent).toContain('Surreal Brainrot image style')
+    expect(receipt.textContent).toContain('5/5 composed')
   })
 
   it('exposes an editable Custom direction and uses it in generation prompts', async () => {
