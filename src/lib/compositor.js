@@ -7,6 +7,33 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 // the bottom for caption + sound, and the right rail for the action stack.
 export const textSafeArea = canvasSpec.safe
 
+export const DEFAULT_OVERLAY_SETTINGS = Object.freeze({
+  position: 'auto',
+  offsetX: 0,
+  offsetY: 0,
+  backgroundEnabled: false,
+  backgroundOpacity: 0.72,
+  backgroundPadding: 32,
+  textScale: 1,
+})
+
+export function normalizeOverlaySettings(value = {}) {
+  const position = ['auto', 'top', 'center', 'bottom'].includes(value.position) ? value.position : 'auto'
+  return {
+    position,
+    offsetX: clamp(Number(value.offsetX) || 0, -320, 320),
+    offsetY: clamp(Number(value.offsetY) || 0, -560, 560),
+    backgroundEnabled: Boolean(value.backgroundEnabled),
+    backgroundOpacity: clamp(Number(value.backgroundOpacity) || 0, 0, 1),
+    backgroundPadding: clamp(Number(value.backgroundPadding) || 0, 0, 96),
+    textScale: clamp(Number(value.textScale) || 1, 0.7, 1.35),
+  }
+}
+
+export function overlaySettingsKey(value) {
+  return JSON.stringify(normalizeOverlaySettings(value))
+}
+
 function fnv1a(value) {
   let hash = 0x811c9dc5
   for (let index = 0; index < value.length; index += 1) {
@@ -95,27 +122,30 @@ function textFrame(layoutId, preset, direction) {
 // Pure geometry: given text + direction + preset and a measure function,
 // compute every rendered line with its position, plus the emphasis span.
 // The painter consumes this; tests assert safe-area behavior on it directly.
-export function layoutSlideText({ text, role = 'setup', direction, preset: presetInput, measure, index = 0, total = 1 }) {
+export function layoutSlideText({ text, role = 'setup', direction, preset: presetInput, measure, index = 0, total = 1, overlaySettings }) {
   const preset = getPreset(presetInput?.id ?? presetInput)
+  const overlay = normalizeOverlaySettings(overlaySettings)
   const resolved = validateDirection(direction, { text, role })
   const layout = LAYOUTS[resolved.layout] || LAYOUTS['editorial-split']
   const frame = textFrame(layout.id, preset, resolved)
   const transform = preset.display.transform === 'upper' ? (value) => value.toUpperCase() : (value) => value
   const shaped = transform(clean(text))
-  const fontRange = [Math.round(layout.fontRange[0] * preset.sizeScale), Math.round(layout.fontRange[1] * preset.sizeScale)]
+  const fontRange = [Math.round(layout.fontRange[0] * preset.sizeScale * overlay.textScale), Math.round(layout.fontRange[1] * preset.sizeScale * overlay.textScale)]
   const lineHeight = layout.lineHeight * preset.lineHeightScale
   const fitted = fitText(shaped, measure, { maxWidth: frame.maxWidth, maxLines: layout.maxLines, fontRange, lineHeight, maxHeight: frame.yBottom - frame.yTop })
 
   const blockHeight = fitted.lines.length * fitted.lineHeight
   const span = frame.yBottom - frame.yTop
-  const blockTop = frame.anchor === 'top' ? frame.yTop
-    : frame.anchor === 'bottom' ? frame.yBottom - blockHeight
+  const anchor = overlay.position === 'auto' ? frame.anchor : overlay.position
+  const blockTop = anchor === 'top' ? frame.yTop
+    : anchor === 'bottom' ? frame.yBottom - blockHeight
     : Math.round(frame.yTop + Math.max(0, (span - blockHeight) / 2))
-  const top = clamp(blockTop, textSafeArea.top, Math.max(textSafeArea.top, textSafeArea.bottom - blockHeight))
+  const top = clamp(blockTop + overlay.offsetY, textSafeArea.top, Math.max(textSafeArea.top, textSafeArea.bottom - blockHeight))
 
   const lines = fitted.lines.map((line, lineIndex) => {
     const width = measure(line, fitted.fontSize)
-    const x = frame.align === 'right' ? frame.x - width : frame.align === 'center' ? Math.round(frame.x - width / 2) : frame.x
+    const naturalX = frame.align === 'right' ? frame.x - width : frame.align === 'center' ? Math.round(frame.x - width / 2) : frame.x
+    const x = clamp(naturalX + overlay.offsetX, textSafeArea.left, Math.max(textSafeArea.left, textSafeArea.right - width))
     return { text: line, x, y: top + lineIndex * fitted.lineHeight, width }
   })
 
@@ -139,7 +169,7 @@ export function layoutSlideText({ text, role = 'setup', direction, preset: prese
   }
 
   return {
-    preset, layout: layout.id, direction: resolved, frame, lines, emphasisSpan,
+    preset, layout: layout.id, direction: resolved, frame, lines, emphasisSpan, overlay,
     fontSize: fitted.fontSize, lineHeight: fitted.lineHeight,
     blockTop: top, blockBottom: top + blockHeight, index, total,
   }
@@ -258,6 +288,18 @@ function paintEmphasis(context, plan) {
 
 function paintTextBlock(context, plan, color) {
   const { preset, fontSize, emphasisSpan } = plan
+  if (plan.overlay.backgroundEnabled && plan.lines.length) {
+    const padding = plan.overlay.backgroundPadding
+    const left = clamp(Math.min(...plan.lines.map((line) => line.x)) - padding, textSafeArea.left, textSafeArea.right)
+    const right = clamp(Math.max(...plan.lines.map((line) => line.x + line.width)) + padding, textSafeArea.left, textSafeArea.right)
+    const top = clamp(plan.blockTop - padding, textSafeArea.top, textSafeArea.bottom)
+    const bottom = clamp(plan.blockBottom + padding, textSafeArea.top, textSafeArea.bottom)
+    context.save()
+    context.globalAlpha = plan.overlay.backgroundOpacity
+    context.fillStyle = '#000000'
+    context.fillRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top))
+    context.restore()
+  }
   paintEmphasis(context, plan)
   setFont(context, preset, fontSize)
   context.textBaseline = 'top'
@@ -443,7 +485,7 @@ export function composeSlide({ image, text, slide, direction, preset: presetInpu
     setFont(context, preset, size)
     return context.measureText(value).width
   }
-  const plan = layoutSlideText({ text: copy, role, direction, preset, measure, index, total })
+  const plan = layoutSlideText({ text: copy, role, direction, preset, measure, index, total, overlaySettings: slide?.overlay })
 
   const crop = cropBox(image, plan.direction.focalPoint)
   context.drawImage(image, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, canvasSpec.width, canvasSpec.height)

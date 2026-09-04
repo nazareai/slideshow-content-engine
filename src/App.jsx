@@ -3,7 +3,7 @@ import * as Tabs from '@radix-ui/react-tabs'
 import JSZip from 'jszip'
 import { Check, Clipboard, Download, Grid3x3, Lightbulb, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { cn } from './lib/cn'
-import { computeExportReadiness, ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, toMarkdown } from './lib/engine'
+import { computeExportReadiness, ensureZipFilename, isRenderCurrent, makeSlides, overlaySettingsKey, runQualityGate, scoreIdea, toMarkdown } from './lib/engine'
 import { DEFAULT_IMAGE_MODEL, generateSlideImages, IMAGE_GENERATION_CONCURRENCY, planImagePrompts } from './lib/imageApi'
 import { composeContactSheet, composeSlideDataUrl, loadImage } from './lib/compositor'
 import { DEFAULT_PRESET_ID, getPreset, STYLE_PRESETS } from './lib/artDirection'
@@ -118,6 +118,33 @@ function App() {
     if (field === 'visual' || field === 'text') setReviewedSlides((current) => { const next = { ...current }; delete next[id]; return next })
   }
 
+  async function updateOverlay(id, patch) {
+    const slide = slides.find((item) => item.id === id)
+    if (!slide) return
+    const nextSlide = { ...slide, overlay: { ...(slide.overlay || {}), ...patch } }
+    setSlides((current) => current.map((item) => item.id === id ? nextSlide : item))
+    setReviewedSlides((current) => { const next = { ...current }; delete next[id]; return next })
+    const previous = images[id]
+    if (!previous?.dataUrl) {
+      setNotice(`Slide ${id} overlay changed. Generate images to preview it.`)
+      return
+    }
+    const token = crypto.randomUUID()
+    setImages((current) => ({ ...current, [id]: { ...current[id], overlayRenderToken: token } }))
+    try {
+      const index = slides.findIndex((item) => item.id === id)
+      const composed = await composeSlideDataUrl({ imageDataUrl: previous.dataUrl, slide: nextSlide, direction: nextSlide.direction, preset: stylePreset, index, total: slides.length })
+      setImages((current) => {
+        if (current[id]?.overlayRenderToken !== token) return current
+        if (current[id]?.composedUrl) URL.revokeObjectURL(current[id].composedUrl)
+        return { ...current, [id]: { ...current[id], composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: nextSlide.text, renderedVisual: nextSlide.visual, renderedPreset: stylePreset, renderedLayout: nextSlide.direction?.layout, renderedStyleDirective: imageStyle.directive, renderedOverlayKey: overlaySettingsKey(nextSlide.overlay), overlayRenderToken: null } }
+      })
+      setNotice(`Slide ${id} overlay updated. Review and approve it again before export.`)
+    } catch (error) {
+      setNotice(error.message || `Could not update slide ${id} overlay.`)
+    }
+  }
+
   // Re-render overlays locally from stored raw images — no new image credits.
   async function recomposeOverlays(presetId = stylePreset) {
     const pending = slides.filter((slide) => images[slide.id]?.dataUrl)
@@ -131,7 +158,7 @@ function App() {
         const index = slides.findIndex((entry) => entry.id === slide.id)
         const composed = await composeSlideDataUrl({ imageDataUrl: next[slide.id].dataUrl, slide, direction: slide.direction, preset: presetId, index, total: slides.length })
         if (next[slide.id].composedUrl) URL.revokeObjectURL(next[slide.id].composedUrl)
-        next[slide.id] = { ...next[slide.id], composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: presetId, renderedLayout: slide.direction?.layout }
+        next[slide.id] = { ...next[slide.id], composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: presetId, renderedLayout: slide.direction?.layout, renderedStyleDirective: imageStyle.directive, renderedOverlayKey: overlaySettingsKey(slide.overlay) }
         setImages({ ...next })
       }
       setNotice(`Overlays re-rendered in the ${getPreset(presetId).name} style. Review and approve every frame again before export.`)
@@ -177,7 +204,7 @@ function App() {
           ...(frame ? { dataUrl: frame.dataUrl, mediaType: frame.mediaType, cost: frame.cost, prompt: frame.prompt } : previous),
           renderedStyleId: imageStyle.id, renderedStyleDirective: imageStyle.directive,
           composedBlob: composed.blob, composedUrl: composed.dataUrl,
-          renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: stylePreset, renderedLayout: slide.direction?.layout,
+          renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: stylePreset, renderedLayout: slide.direction?.layout, renderedOverlayKey: overlaySettingsKey(slide.overlay),
         },
       }
     })
@@ -410,7 +437,7 @@ function App() {
                   {slides.map((slide) => <article key={slide.id} className="panel overflow-hidden">
                     <div className="flex items-center justify-between gap-2 border-b border-black/10 px-4 py-3"><span className="flex min-w-0 items-center gap-2 text-sm font-bold tabular-nums">{String(slide.id).padStart(2,'0')} · {slide.role}{slide.direction?.layout && <span className="truncate rounded bg-black/5 px-1.5 py-0.5 text-[11px] font-semibold text-black/60">{slide.direction.layout}{slide.direction.mirror ? ' ⇋' : ''}</span>}</span><span className="shrink-0 text-xs text-black/45">{images[slide.id]?.composedUrl ? 'TEXT ON IMAGE' : `${slide.text.length}/110`}</span></div>
                     {images[slide.id]?.composedUrl && <><img src={images[slide.id].composedUrl} alt={`Finished slide ${slide.id} with generated visual and text overlay`} className="aspect-[9/16] w-full object-cover" /><label className="flex min-h-11 items-center gap-2 border-t border-black/10 px-4 py-3 text-sm font-bold"><input type="checkbox" checked={Boolean(reviewedSlides[slide.id])} onChange={(event) => setReviewedSlides((current) => ({ ...current, [slide.id]: event.target.checked }))} /> Reviewed and approved</label></>}
-                    <div className="p-4"><label className="sr-only" htmlFor={`slide-${slide.id}`}>Slide {slide.id} copy</label><textarea id={`slide-${slide.id}`} className="field min-h-28 resize-y font-display text-xl font-bold leading-snug" value={slide.text} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'text', e.target.value)} /><label className="label mt-4" htmlFor={`visual-${slide.id}`}>Visual direction</label><input id={`visual-${slide.id}`} className="field" value={slide.visual} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'visual', e.target.value)} /></div>
+                    <div className="p-4"><label className="sr-only" htmlFor={`slide-${slide.id}`}>Slide {slide.id} copy</label><textarea id={`slide-${slide.id}`} className="field min-h-28 resize-y font-display text-xl font-bold leading-snug" value={slide.text} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'text', e.target.value)} /><label className="label mt-4" htmlFor={`visual-${slide.id}`}>Visual direction</label><input id={`visual-${slide.id}`} className="field" value={slide.visual} disabled={generatingImages} onChange={(e) => updateSlide(slide.id, 'visual', e.target.value)} /><fieldset className="mt-4 grid gap-3 rounded-xl border border-black/10 bg-black/[0.025] p-3"><legend className="px-1 text-xs font-black uppercase tracking-[0.12em]">Overlay layout</legend><label className="label">Text position<select aria-label={`Slide ${slide.id} text position`} value={slide.overlay?.position || 'auto'} onChange={(e) => updateOverlay(slide.id, { position: e.target.value })} className="field mt-1 font-normal"><option value="auto">Automatic</option><option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option></select></label><div className="grid grid-cols-2 gap-3"><label className="label">Horizontal offset<input aria-label={`Slide ${slide.id} horizontal offset`} type="range" min="-320" max="320" step="8" value={slide.overlay?.offsetX || 0} onChange={(e) => updateOverlay(slide.id, { offsetX: Number(e.target.value) })} /></label><label className="label">Vertical offset<input aria-label={`Slide ${slide.id} vertical offset`} type="range" min="-560" max="560" step="8" value={slide.overlay?.offsetY || 0} onChange={(e) => updateOverlay(slide.id, { offsetY: Number(e.target.value) })} /></label></div><button type="button" role="switch" aria-checked={Boolean(slide.overlay?.backgroundEnabled)} aria-label={`Slide ${slide.id} overlay background`} className={cn('button justify-center', slide.overlay?.backgroundEnabled && 'bg-black text-white')} onClick={() => updateOverlay(slide.id, { backgroundEnabled: !slide.overlay?.backgroundEnabled })}>Text background: {slide.overlay?.backgroundEnabled ? 'On' : 'Off'}</button><div className="grid grid-cols-3 gap-3"><label className="label">Opacity<input aria-label={`Slide ${slide.id} background opacity`} type="range" min="0" max="1" step="0.05" value={slide.overlay?.backgroundOpacity ?? 0.72} disabled={!slide.overlay?.backgroundEnabled} onChange={(e) => updateOverlay(slide.id, { backgroundOpacity: Number(e.target.value) })} /></label><label className="label">Padding<input aria-label={`Slide ${slide.id} background padding`} type="range" min="0" max="96" step="4" value={slide.overlay?.backgroundPadding ?? 32} disabled={!slide.overlay?.backgroundEnabled} onChange={(e) => updateOverlay(slide.id, { backgroundPadding: Number(e.target.value) })} /></label><label className="label">Text size<input aria-label={`Slide ${slide.id} text size`} type="range" min="0.7" max="1.35" step="0.05" value={slide.overlay?.textScale ?? 1} onChange={(e) => updateOverlay(slide.id, { textScale: Number(e.target.value) })} /></label></div></fieldset></div>
                   </article>)}
                 </div>
                 <div className="panel mt-4 p-5"><label className="label" htmlFor="caption">Caption</label><textarea id="caption" className="field min-h-24 resize-y" value={caption} onChange={(e) => setCaption(e.target.value)} /></div>

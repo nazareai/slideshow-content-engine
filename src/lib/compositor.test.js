@@ -50,6 +50,32 @@ describe('art-directed compositor', () => {
     }
   })
 
+  it('clamps dynamic position and offsets to the safe area at every extreme', () => {
+    for (const position of ['top', 'center', 'bottom']) {
+      for (const offsetX of [-999, 999]) {
+        for (const offsetY of [-999, 999]) {
+          const slide = { role: 'Evidence', text: 'Move this overlay away from the important subject' }
+          const direction = validateDirection({ layout: 'editorial-split' }, slide)
+          const plan = layoutSlideText({ text: slide.text, role: slide.role, direction, preset: 'impact', measure, overlaySettings: { position, offsetX, offsetY, textScale: 1.35 } })
+          for (const line of plan.lines) {
+            expect(line.x).toBeGreaterThanOrEqual(textSafeArea.left)
+            expect(line.x + line.width).toBeLessThanOrEqual(textSafeArea.right)
+            expect(line.y).toBeGreaterThanOrEqual(textSafeArea.top)
+            expect(line.y + plan.lineHeight).toBeLessThanOrEqual(textSafeArea.bottom)
+          }
+        }
+      }
+    }
+  })
+
+  it('paints an optional background with configured opacity and padding', async () => {
+    const recording = recordingCanvas()
+    const slide = { role: 'Evidence', text: 'Readable text', overlay: { backgroundEnabled: true, backgroundOpacity: 0.4, backgroundPadding: 48 } }
+    await composeSlide({ image, slide, direction: validateDirection({ layout: 'evidence-card' }, slide), preset: 'impact', canvas: recording.canvas })
+    expect(recording.calls).toContainEqual(['set:globalAlpha', 0.4])
+    expect(recording.calls.some(([name]) => name === 'fillRect')).toBe(true)
+  })
+
   it('keeps mirrored compositions inside the safe area too', () => {
     const plan = planFor('tension-rail', 'zine', { mirror: true })
     for (const line of plan.lines) {

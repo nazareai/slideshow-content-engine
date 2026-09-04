@@ -49,6 +49,14 @@ describe('content engine', () => {
     expect(isRenderCurrent(slide, undefined, 'impact')).toBe(false)
   })
 
+  it('marks a render stale whenever its per-slide overlay layout changes', () => {
+    const slide = { text: 'The observed slide copy', visual: 'One scene', direction: { layout: 'evidence-card' }, overlay: { position: 'top', offsetX: 0 } }
+    const rendered = { composedBlob: {}, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: 'impact', renderedLayout: 'evidence-card', renderedOverlayKey: JSON.stringify({ position: 'top', offsetX: 0, offsetY: 0, backgroundEnabled: false, backgroundOpacity: 0.72, backgroundPadding: 32, textScale: 1 }) }
+    expect(isRenderCurrent(slide, rendered, 'impact')).toBe(true)
+    expect(isRenderCurrent({ ...slide, overlay: { ...slide.overlay, position: 'bottom' } }, rendered, 'impact')).toBe(false)
+    expect(isRenderCurrent({ ...slide, overlay: { ...slide.overlay, backgroundEnabled: true } }, rendered, 'impact')).toBe(false)
+  })
+
   it('marks renders stale when the image-style directive changes, without breaking the legacy check', () => {
     const slide = { text: 'The observed slide copy', visual: 'One scene', direction: { layout: 'evidence-card' } }
     const cinematic = resolveImageStyle('cinematic')

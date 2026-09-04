@@ -57,10 +57,25 @@ export function makeSlides({ topic, audience, angle, observation, slideCount }) 
 // True when the stored render still matches the slide copy, visual direction,
 // planned composition, active style preset, and (when supplied) the selected
 // image-style directive — otherwise export is stale.
+export function overlaySettingsKey(value = {}) {
+  const position = ['auto', 'top', 'center', 'bottom'].includes(value.position) ? value.position : 'auto'
+  const clampValue = (input, min, max, fallback) => Math.max(min, Math.min(max, Number.isFinite(Number(input)) ? Number(input) : fallback))
+  return JSON.stringify({
+    position,
+    offsetX: clampValue(value.offsetX, -320, 320, 0),
+    offsetY: clampValue(value.offsetY, -560, 560, 0),
+    backgroundEnabled: Boolean(value.backgroundEnabled),
+    backgroundOpacity: clampValue(value.backgroundOpacity, 0, 1, 0.72),
+    backgroundPadding: clampValue(value.backgroundPadding, 0, 96, 32),
+    textScale: clampValue(value.textScale, 0.7, 1.35, 1),
+  })
+}
+
 export function isRenderCurrent(slide, rendered, presetId, styleDirective) {
   if (!rendered?.composedBlob) return false
   return rendered.renderedText === slide.text && rendered.renderedVisual === slide.visual &&
     rendered.renderedPreset === presetId &&
+    (rendered.renderedOverlayKey === overlaySettingsKey(slide.overlay) || (rendered.renderedOverlayKey === undefined && overlaySettingsKey(slide.overlay) === overlaySettingsKey({}))) &&
     (!slide.direction?.layout || rendered.renderedLayout === slide.direction.layout) &&
     (styleDirective === undefined || rendered.renderedStyleDirective === styleDirective)
 }
