@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { LAYOUT_IDS, STYLE_PRESETS, getPreset } from './artDirection'
 import {
   CUSTOM_STYLE_PLACEHOLDER, DEFAULT_IMAGE_STYLE_ID, IMAGE_STYLE_FIELDS, IMAGE_STYLE_GROUPS,
-  IMAGE_STYLE_IDS, IMAGE_STYLES, getImageStyle, resolveImageStyle, storySceneBrief, styleDirective, stylesInGroup,
+  IMAGE_MEDIA, IMAGE_TREATMENTS, IMAGE_STYLE_IDS, IMAGE_STYLES, getImageStyle, resolveImageStyle, storySceneBrief, styleDirective, stylesInGroup,
 } from './imageStyles'
 
 const fixedStyles = IMAGE_STYLES.filter((style) => !style.editable)
@@ -18,6 +18,13 @@ describe('TikTok-native image style taxonomy', () => {
     ])
     expect(IMAGE_STYLES.some((style) => /professional/i.test(style.name))).toBe(false)
     expect(IMAGE_STYLES.filter((style) => style.editable)).toHaveLength(1)
+  })
+
+  it('offers a researched breadth of independently composable media and treatments', () => {
+    expect(IMAGE_MEDIA.length).toBeGreaterThanOrEqual(17)
+    expect(IMAGE_TREATMENTS.length).toBeGreaterThanOrEqual(16)
+    expect(IMAGE_MEDIA.map((item) => item.name)).toEqual(expect.arrayContaining(['Anime Cel', 'Watercolor Storybook', 'Boxed Action Figure', 'PS2-Era Game Render']))
+    expect(IMAGE_TREATMENTS.map((item) => item.name)).toEqual(expect.arrayContaining(['Italian Brainrot Lore', 'Analog VHS', 'Dreamcore', 'Maximalist Scrapbook']))
   })
 
   it('composes Flat 2D Cartoon with Surreal Brainrot while keeping the medium authoritative', () => {

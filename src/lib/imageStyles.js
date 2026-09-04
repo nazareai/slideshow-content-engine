@@ -297,6 +297,14 @@ export const IMAGE_MEDIA = Object.freeze([
   Object.freeze({ id: 'paper', name: 'Cut-Paper Collage', sourceStyleId: 'paper-collage', photographic: false }),
   Object.freeze({ id: 'pixel', name: 'Retro Pixel Art', sourceStyleId: 'retro-pixel', photographic: false }),
   Object.freeze({ id: 'clay-3d', name: 'Clay & Toy 3D', sourceStyleId: 'clay-toy-3d', photographic: false }),
+  Object.freeze({ id: 'anime-cel', name: 'Anime Cel', sourceStyleId: 'cartoon-pop', photographic: false, overlay: 'Medium variant: hand-drawn anime cel illustration with expressive line art, simplified cel shading, dynamic poses, speed-line staging, and painted 2D backgrounds.' }),
+  Object.freeze({ id: 'watercolor-storybook', name: 'Watercolor Storybook', sourceStyleId: 'hand-doodle', photographic: false, overlay: 'Medium variant: soft watercolor-and-ink storybook illustration on textured paper, visible pigment blooms, gentle linework, and layered washes.' }),
+  Object.freeze({ id: 'editorial-vector', name: 'Editorial Vector', sourceStyleId: 'cartoon-pop', photographic: false, overlay: 'Medium variant: bold editorial vector illustration with geometric silhouettes, limited spot colors, crisp flat shapes, and conceptual visual metaphors.' }),
+  Object.freeze({ id: 'sticker-doodle', name: 'Sticker Doodle Sheet', sourceStyleId: 'paper-collage', photographic: false, overlay: 'Medium variant: hand-cut sticker sheet assembled from doodled characters, white kiss-cut borders, notebook marks, and overlapping paper labels.' }),
+  Object.freeze({ id: 'baroque-painting', name: 'Surreal Baroque Painting', sourceStyleId: 'comic-ink', photographic: false, overlay: 'Medium variant: dramatic old-master oil painting with theatrical chiaroscuro, ornate costume, painterly brushwork, and absurd monumental portrait staging.' }),
+  Object.freeze({ id: 'action-figure', name: 'Boxed Action Figure', sourceStyleId: 'clay-toy-3d', photographic: false, overlay: 'Medium variant: molded collectible action figure inside a blister-pack toy box, miniature accessories, printed backing card, and product-display staging.' }),
+  Object.freeze({ id: 'low-poly-game', name: 'Low-Poly Game Art', sourceStyleId: 'clay-toy-3d', photographic: false, overlay: 'Medium variant: deliberately low-poly game render with faceted geometry, simple vertex colors, chunky props, and retro loading-screen composition.' }),
+  Object.freeze({ id: 'ps2-game', name: 'PS2-Era Game Render', sourceStyleId: 'clay-toy-3d', photographic: false, overlay: 'Medium variant: early-2000s console cutscene render with low-resolution textures, angular models, baked lighting, fog, and compressed game-capture artifacts.' }),
 ])
 
 export const IMAGE_TREATMENTS = Object.freeze([
@@ -305,6 +313,17 @@ export const IMAGE_TREATMENTS = Object.freeze([
   Object.freeze({ id: 'deep-fried', name: 'Deep-Fried', directive: 'Treatment: deep-fried meme. Push saturation, contrast, edge halos, compression blocks, repost damage, and reaction-image intensity while preserving the selected rendering medium.' }),
   Object.freeze({ id: 'cursed', name: 'Cursed', directive: 'Treatment: cursed and deliberately wrong. Use mismatched scale, contradictory shadows, awkward duplication, hard seams, and confident visual incoherence, all rendered natively in the selected medium.' }),
   Object.freeze({ id: 'y2k-chaos', name: 'Y2K Chaos', directive: 'Treatment: Y2K web chaos. Add chrome ornaments, sparkle bursts, gel-button shapes, cursor trails, checkerboard horizons, and candy cyber colors, translated into the selected rendering medium rather than replacing it.' }),
+  Object.freeze({ id: 'italian-brainrot', name: 'Italian Brainrot Lore', directive: 'Treatment: Italian-brainrot lore. Invent a bizarre rhyming pseudo-name, merge an animal or object with an unrelated prop, stage it with dead-serious mythic importance, and repeat a memorable emblem across frames. Keep the selected rendering medium authoritative.' }),
+  Object.freeze({ id: 'cozy-nostalgia', name: 'Cozy Nostalgia', directive: 'Treatment: cozy nostalgic warmth. Use intimate domestic details, softened contrast, worn tactile surfaces, childhood-scale props, and calm slice-of-life staging without changing the selected medium.' }),
+  Object.freeze({ id: 'analog-vhs', name: 'Analog VHS', directive: 'Treatment: analog VHS transfer. Add tracking noise, chroma bleed, date-stamp fragments, interlaced edges, tape dropout, and imperfect paused-frame composition within the selected medium.' }),
+  Object.freeze({ id: 'glitchcore', name: 'Glitchcore', directive: 'Treatment: glitchcore. Use datamosh blocks, RGB displacement, broken interface fragments, scanline tears, duplicated contours, and digital-error rhythm within the selected medium.' }),
+  Object.freeze({ id: 'dreamcore', name: 'Dreamcore', directive: 'Treatment: dreamcore. Use familiar empty places, impossible scale, soft uncanny light, hazy thresholds, lonely symbolic props, and half-remembered spatial logic in the selected medium.' }),
+  Object.freeze({ id: 'weirdcore', name: 'Weirdcore', directive: 'Treatment: weirdcore. Use crude web-era symbols, unsettling object placement, liminal rooms, eyeball motifs, compressed caption fragments, and intentionally unresolved meaning in the selected medium.' }),
+  Object.freeze({ id: 'cute-kawaii', name: 'Cute / Kawaii', directive: 'Treatment: cute kawaii exaggeration. Use tiny rounded proportions, oversized emotive faces, charm-like props, candy accents, and sticker-ready poses in the selected medium.' }),
+  Object.freeze({ id: 'horror-found-footage', name: 'Found-Footage Horror', directive: 'Treatment: found-footage horror. Use off-center evidence framing, obstructed subjects, harsh practical light, timestamp or monitor artifacts, and one unexplained threat, translated into the selected medium.' }),
+  Object.freeze({ id: 'tabloid-drama', name: 'Tabloid Drama', directive: 'Treatment: tabloid drama. Use confrontational crop, red-circle visual emphasis, paparazzi-like urgency, evidence-board inserts, and scandalous reveal pacing while preserving the selected medium.' }),
+  Object.freeze({ id: 'maximalist-scrapbook', name: 'Maximalist Scrapbook', directive: 'Treatment: maximalist scrapbook. Layer torn notes, arrows, underlines, receipts, stickers, tape, doodles, and imperfect personal annotations around one readable focal idea in the selected medium.' }),
+  Object.freeze({ id: 'minimal-deadpan', name: 'Minimal Deadpan', directive: 'Treatment: minimal deadpan. Use severe negative space, one oddly literal subject, restrained palette, rigid framing, and no decorative explanation, while keeping the selected medium.' }),
 ])
 
 export const DEFAULT_IMAGE_MEDIUM_ID = 'photo-candid'
@@ -328,7 +347,7 @@ export function resolveImageStyle(selection = DEFAULT_IMAGE_STYLE_ID) {
     const treatment = getImageTreatment(selection.treatmentId)
     const source = getImageStyle(medium.sourceStyleId)
     const mediumDirective = styleDirective(source)
-    const directive = `${mediumDirective} ${treatment.directive} Medium authority: ${source.directive.negative}`
+    const directive = `${mediumDirective}${medium.overlay ? ` ${medium.overlay}` : ''} ${treatment.directive} Medium authority: ${source.directive.negative}`
     return {
       id: `${medium.id}+${treatment.id}`,
       mediumId: medium.id,

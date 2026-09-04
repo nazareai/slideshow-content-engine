@@ -1,0 +1,16 @@
+
+ RUN  v2.1.9 /Users/0xroyce/WebstormProjects/EloPhanto/workspace/tiktok-slideshow-engine
+
+ ✓ src/AppExport.test.jsx > export package readiness and download > exports a complete ZIP package once all frames are current and every slide is approved
+ ✓ src/AppExport.test.jsx > export package readiness and download > regression: approving every slide while the quality gate fails shows the exact gate blocker instead of a silently dead button
+ ✓ src/AppExport.test.jsx > export package readiness and download > lists missing frames and the failing gate check before anything was generated
+ ✓ src/AppExport.test.jsx > export package readiness and download > blocks with a per-slide approval list until every finished frame is reviewed, then unblocks
+ ✓ src/AppExport.test.jsx > export package readiness and download > marks a slide stale when its copy is edited after rendering and blocks export for that slide alone
+ ✓ src/AppExport.test.jsx > export package readiness and download > still exports a valid package when the contact sheet cannot be rendered
+ ✓ src/AppExport.test.jsx > export package readiness and download > reports the real failure when the browser download cannot be created, with no false success
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  17:06:50
+   Duration  6.86s (transform 485ms, setup 0ms, collect 3.09s, tests 694ms, environment 890ms, prepare 226ms)
+

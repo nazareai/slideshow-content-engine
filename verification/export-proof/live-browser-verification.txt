@@ -1,0 +1,19 @@
+Live browser verification, 2026-09-04
+URL: http://127.0.0.1:4173/
+Transport: deterministic mocked image response installed in page context because no OpenRouter credential is stored. This verifies UI state, parallel generation, approvals, ZIP assembly, and browser download initiation, not provider image quality.
+
+Observed sequence:
+1. Generated 5 local story slides.
+2. Before generation, visible blocker panel said: "Slides 1, 2, 3, 4, 5: no finished frame yet — generate finished slides (image + text) first."
+3. Generated 5 finished frames in parallel.
+4. Checked all 5 "Reviewed and approved" checkboxes.
+5. Browser DOM reported Export package disabled=false and blocker panel absent.
+6. Clicked the real Export package button.
+7. Success notice observed: "5 composed slides in the Bold Impact style were exported with the Markdown manifest and a contact sheet."
+
+Screenshot:
+verification/export-proof/export-success.jpg
+
+Automated ZIP-content proof:
+verification/export-proof/test-run.txt
+The regression test clicks export, captures slideshow-upload-package.zip, reopens it with JSZip, and verifies slideshow-package.md, contact-sheet.png, 5 PNG slides, and 5 prompt text files.

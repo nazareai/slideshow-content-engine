@@ -1,0 +1,19 @@
+
+> slideshow-content-engine@0.1.0 build
+> vite build
+
+vite v6.4.3 building for production...
+transforming...
+✓ 1615 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                              0.90 kB │ gzip:   0.46 kB
+dist/contact-sheet.html                      1.57 kB │ gzip:   0.84 kB
+dist/style-contact-sheet.html                2.58 kB │ gzip:   1.18 kB
+dist/assets/main-Djg4pz8O.css               16.73 kB │ gzip:   4.00 kB
+dist/assets/contactSheet-D7vf9rjI.js         3.74 kB │ gzip:   1.79 kB
+dist/assets/styleContactSheet-pF5Q754i.js   17.89 kB │ gzip:   5.52 kB
+dist/assets/imageStyles-Cbjx394H.js         25.34 kB │ gzip:   9.26 kB
+dist/assets/engine--iB1B-GB.js              28.59 kB │ gzip:  10.36 kB
+dist/assets/main-DnkLohOG.js               330.43 kB │ gzip: 105.60 kB
+✓ built in 4.83s
