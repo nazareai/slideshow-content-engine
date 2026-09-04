@@ -55,12 +55,14 @@ export function makeSlides({ topic, audience, angle, observation, slideCount }) 
 }
 
 // True when the stored render still matches the slide copy, visual direction,
-// planned composition, and active style preset — otherwise export is stale.
-export function isRenderCurrent(slide, rendered, presetId) {
+// planned composition, active style preset, and (when supplied) the selected
+// image-style directive — otherwise export is stale.
+export function isRenderCurrent(slide, rendered, presetId, styleDirective) {
   if (!rendered?.composedBlob) return false
   return rendered.renderedText === slide.text && rendered.renderedVisual === slide.visual &&
     rendered.renderedPreset === presetId &&
-    (!slide.direction?.layout || rendered.renderedLayout === slide.direction.layout)
+    (!slide.direction?.layout || rendered.renderedLayout === slide.direction.layout) &&
+    (styleDirective === undefined || rendered.renderedStyleDirective === styleDirective)
 }
 
 // The composed sequence must read as an art-directed set: at least
@@ -95,7 +97,11 @@ export function runQualityGate(project = {}) {
 
 export function toMarkdown(project) {
   const gate = runQualityGate(project)
-  return `# ${clean(project.title) || 'Slideshow'}\n\n**Audience:** ${clean(project.audience)}\n**Status:** ${gate.passed ? 'Ready for manual review' : 'Needs revision'}\n\n## Research basis\n\n${clean(project.observation) || 'No research note supplied.'}\n\nSource: ${clean(project.source) || 'Not supplied'}\n\n## Slides\n\n${(project.slides || []).map((slide) => `### ${slide.id}. ${slide.role}\n\n${slide.text}\n\n_Visual direction: ${slide.visual}_${slide.direction?.layout ? `\n\n_Composition: ${slide.direction.layout}${slide.direction.mirror ? ' (mirrored)' : ''} · emphasis: ${slide.direction.emphasis || '—'}_` : ''}`).join('\n\n')}\n\n## Caption\n\n${clean(project.caption)}\n\n## Quality gate\n\n${gate.checks.map((check) => `- [${check.passed ? 'x' : ' '}] ${check.label}`).join('\n')}\n\n## Publishing note\n\nThe package contains real generated image assets when every frame has been rendered. Verify claims and visual accuracy, add native text or audio if wanted, and publish manually.\n`
+  const imageStyle = project.imageStyle
+  const imageStyleSection = imageStyle?.name
+    ? `\n\n## Image style\n\n**${clean(imageStyle.name)}**${imageStyle.custom ? ` — custom direction: ${clean(imageStyle.custom)}` : ''}\n\n${clean(imageStyle.directive)}`
+    : ''
+  return `# ${clean(project.title) || 'Slideshow'}\n\n**Audience:** ${clean(project.audience)}\n**Status:** ${gate.passed ? 'Ready for manual review' : 'Needs revision'}\n\n## Research basis\n\n${clean(project.observation) || 'No research note supplied.'}\n\nSource: ${clean(project.source) || 'Not supplied'}${imageStyleSection}\n\n## Slides\n\n${(project.slides || []).map((slide) => `### ${slide.id}. ${slide.role}\n\n${slide.text}\n\n_Visual direction: ${slide.visual}_${slide.direction?.layout ? `\n\n_Composition: ${slide.direction.layout}${slide.direction.mirror ? ' (mirrored)' : ''} · emphasis: ${slide.direction.emphasis || '—'}_` : ''}`).join('\n\n')}\n\n## Caption\n\n${clean(project.caption)}\n\n## Quality gate\n\n${gate.checks.map((check) => `- [${check.passed ? 'x' : ' '}] ${check.label}`).join('\n')}\n\n## Publishing note\n\nThe package contains real generated image assets when every frame has been rendered. Verify claims and visual accuracy, add native text or audio if wanted, and publish manually.\n`
 }
 
 function escapeXml(value) {

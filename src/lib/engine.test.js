@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreIdea, sequenceIsDiverse, slideToSvg, toMarkdown } from './engine'
+import { resolveImageStyle } from './imageStyles'
 
 const input = { topic: 'SEO', audience: 'founders', angle: 'Why qualified search traffic suddenly stalls', observation: 'Three pages ranked, but none converted.', slideCount: 7 }
 const validProject = () => ({ title: input.angle, audience: input.audience, observation: input.observation, source: 'https://example.com', slides: makeSlides(input), caption: 'A practical test worth saving.', stale: false })
@@ -46,6 +47,29 @@ describe('content engine', () => {
     expect(isRenderCurrent(slide, { ...rendered, renderedLayout: 'impact-stack' }, 'impact')).toBe(false)
     expect(isRenderCurrent(slide, { ...rendered, composedBlob: null }, 'impact')).toBe(false)
     expect(isRenderCurrent(slide, undefined, 'impact')).toBe(false)
+  })
+
+  it('marks renders stale when the image-style directive changes, without breaking the legacy check', () => {
+    const slide = { text: 'The observed slide copy', visual: 'One scene', direction: { layout: 'evidence-card' } }
+    const cinematic = resolveImageStyle('cinematic')
+    const rendered = { composedBlob: {}, renderedText: 'The observed slide copy', renderedVisual: 'One scene', renderedPreset: 'impact', renderedLayout: 'evidence-card', renderedStyleDirective: cinematic.directive }
+    expect(isRenderCurrent(slide, rendered, 'impact', cinematic.directive)).toBe(true)
+    expect(isRenderCurrent(slide, rendered, 'impact', resolveImageStyle('y2k-internet').directive)).toBe(false)
+    expect(isRenderCurrent(slide, rendered, 'impact', resolveImageStyle({ styleId: 'custom', customText: 'edited direction' }).directive)).toBe(false)
+    expect(isRenderCurrent(slide, rendered, 'impact')).toBe(true)
+  })
+
+  it('persists the selected image style through the exported manifest', () => {
+    const project = validProject()
+    project.imageStyle = resolveImageStyle('y2k-internet')
+    const markdown = toMarkdown(project)
+    expect(markdown).toContain('## Image style')
+    expect(markdown).toContain('Y2K Internet')
+    expect(markdown).toContain('digicam')
+    project.imageStyle = resolveImageStyle({ styleId: 'custom', customText: 'infrared film in a greenhouse' })
+    const customMarkdown = toMarkdown(project)
+    expect(customMarkdown).toContain('custom direction: infrared film in a greenhouse')
+    expect(customMarkdown).toContain('infrared film in a greenhouse')
   })
 
   it('records the composition and emphasis in the exported manifest', () => {

@@ -7,6 +7,7 @@ import { ensureZipFilename, isRenderCurrent, makeSlides, runQualityGate, scoreId
 import { buildImagePrompt, buildVisualBible, DEFAULT_IMAGE_MODEL, generateImage } from './lib/imageApi'
 import { composeContactSheet, composeSlideDataUrl, loadImage } from './lib/compositor'
 import { DEFAULT_PRESET_ID, getPreset, STYLE_PRESETS } from './lib/artDirection'
+import { CUSTOM_STYLE_PLACEHOLDER, DEFAULT_IMAGE_STYLE_ID, getImageStyle, IMAGE_STYLES, resolveImageStyle } from './lib/imageStyles'
 import { DEFAULT_TEXT_MODEL, generateStory } from './lib/textApi'
 
 const starterIdeas = [
@@ -48,12 +49,15 @@ function App() {
   const [generatingText, setGeneratingText] = useState(false)
   const [generatingImages, setGeneratingImages] = useState(false)
   const [stylePreset, setStylePreset] = useState(DEFAULT_PRESET_ID)
+  const [imageStyleId, setImageStyleId] = useState(DEFAULT_IMAGE_STYLE_ID)
+  const [customStyleText, setCustomStyleText] = useState('')
   const [images, setImages] = useState({})
   const [reviewedSlides, setReviewedSlides] = useState({})
+  const imageStyle = useMemo(() => resolveImageStyle({ styleId: imageStyleId, customText: customStyleText }), [imageStyleId, customStyleText])
   const briefKey = JSON.stringify({ topic, audience, angle, observation, source, slideCount })
   const [generatedBriefKey, setGeneratedBriefKey] = useState(briefKey)
   const stale = briefKey !== generatedBriefKey
-  const project = useMemo(() => ({ title: angle || topic, audience, observation, source, slides, caption, stale }), [angle, topic, audience, observation, source, slides, caption, stale])
+  const project = useMemo(() => ({ title: angle || topic, audience, observation, source, slides, caption, stale, imageStyle }), [angle, topic, audience, observation, source, slides, caption, stale, imageStyle])
   const gate = useMemo(() => runQualityGate(project), [project])
 
   function generate() {
@@ -140,25 +144,38 @@ function App() {
     recomposeOverlays(presetId)
   }
 
+  // Image style is chosen before generation. Unlike the slide design preset it
+  // shapes the generated photograph itself, so switching after generating only
+  // marks frames stale — it never silently spends image credits.
+  function changeImageStyle(styleId) {
+    if (styleId === imageStyleId) return
+    setImageStyleId(styleId)
+    const hasFrames = slides.some((slide) => images[slide.id]?.dataUrl)
+    const name = getImageStyle(styleId).name
+    setNotice(hasFrames
+      ? `Image style set to ${name}. Existing frames keep their previous style — regenerate images to apply it. Export stays blocked until every frame matches the selected style.`
+      : `Image style set to ${name}. It will shape every image prompt when you generate.`)
+  }
+
   async function generateImages() {
     if (!apiKey.trim() || generatingImages) {
       setNotice('Add your OpenRouter API key to generate real images.')
       return
     }
     setGeneratingImages(true)
-    setNotice('Generating real images one frame at a time…')
+    setNotice(`Generating real images one frame at a time in the ${imageStyle.name} style…`)
     try {
       const next = { ...images }
       const failed = []
       setReviewedSlides({})
-      const visualBible = buildVisualBible({ topic, title: angle, audience })
+      const visualBible = buildVisualBible({ topic, title: angle, audience }, imageStyle)
       for (const [index, slide] of slides.entries()) {
         try {
-          const prompt = buildImagePrompt(slide, { topic, title: angle, audience }, visualBible)
+          const prompt = buildImagePrompt(slide, { topic, title: angle, audience }, visualBible, imageStyle)
           const result = await generateImage({ apiKey, prompt, model: imageModel })
           const composed = await composeSlideDataUrl({ imageDataUrl: result.dataUrl, slide, direction: slide.direction, preset: stylePreset, index, total: slides.length })
           if (next[slide.id]?.composedUrl) URL.revokeObjectURL(next[slide.id].composedUrl)
-          next[slide.id] = { ...result, prompt, composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: stylePreset, renderedLayout: slide.direction?.layout }
+          next[slide.id] = { ...result, prompt, renderedStyleId: imageStyle.id, renderedStyleDirective: imageStyle.directive, composedBlob: composed.blob, composedUrl: composed.dataUrl, renderedText: slide.text, renderedVisual: slide.visual, renderedPreset: stylePreset, renderedLayout: slide.direction?.layout }
           setImages({ ...next })
         } catch (error) {
           failed.push(slide.id)
@@ -166,7 +183,7 @@ function App() {
         }
       }
       if (failed.length) setNotice(`Generation stopped at slide ${failed[0]}. Completed slides were preserved. Retry to finish the missing frames; export remains blocked.`)
-      else setNotice(`${slides.length} finished slides generated. Review and approve every frame before export.`)
+      else setNotice(`${slides.length} finished slides generated in the ${imageStyle.name} image style. Review and approve every frame before export.`)
     } catch (error) {
       setNotice(error.message || 'Image generation failed. Previously generated frames were kept.')
     } finally {
@@ -196,7 +213,7 @@ function App() {
       const image = await loadImage(images[slide.id].composedUrl)
       items.push({ image, label: `${String(slide.id).padStart(2, '0')} · ${slide.role} · ${slide.direction?.layout || 'auto'}` })
     }
-    return composeContactSheet({ items, title: `${(angle || topic).slice(0, 60)} — ${getPreset(stylePreset).name}` })
+    return composeContactSheet({ items, title: `${(angle || topic).slice(0, 60)} — ${getPreset(stylePreset).name} · ${imageStyle.name}` })
   }
 
   async function downloadContactSheet() {
@@ -209,7 +226,7 @@ function App() {
   }
 
   async function download() {
-    const readyCount = project.slides.filter((slide) => isRenderCurrent(slide, images[slide.id], stylePreset) && reviewedSlides[slide.id]).length
+    const readyCount = project.slides.filter((slide) => isRenderCurrent(slide, images[slide.id], stylePreset, imageStyle.directive) && reviewedSlides[slide.id]).length
     if (!gate.passed || exporting || readyCount !== project.slides.length) {
       setNotice('Generate, inspect, and approve every finished image-and-text slide before export. Raw images, stale styles, and fallback cards are not final output.')
       return
@@ -219,7 +236,7 @@ function App() {
       const zip = new JSZip(); zip.file('slideshow-package.md', toMarkdown(project)); const folder = zip.folder('slides')
       for (const slide of project.slides) {
         const generated = images[slide.id]
-        if (isRenderCurrent(slide, generated, stylePreset)) {
+        if (isRenderCurrent(slide, generated, stylePreset, imageStyle.directive)) {
           folder.file(`slide-${String(slide.id).padStart(2,'0')}.png`, generated.composedBlob)
           folder.file(`slide-${String(slide.id).padStart(2,'0')}-prompt.txt`, generated.prompt)
         } else {
@@ -277,10 +294,34 @@ function App() {
 
               <section aria-labelledby="slides-title">
                 <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 id="slides-title" className="text-2xl font-bold">Slide editor</h2><p className="text-sm text-black/55">Short copy. One job per frame. Real visual generation included.</p></div><Score value={scoreIdea({ hook: angle, angle: topic, observation, source, visualPotential: 4, novelty: 4 })} /></div>
-                <div className="mb-5 grid gap-3 rounded-xl border border-black/10 bg-white p-4 md:grid-cols-2"><label className="label">OpenRouter API key<input aria-label="OpenRouter API key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-…" autoComplete="off" className="field mt-1 font-normal" /></label><label className="label">Text model<input aria-label="Text model" value={textModel} onChange={(event) => setTextModel(event.target.value)} className="field mt-1 font-normal" /></label><label className="label">Image model<input aria-label="Image model" value={imageModel} onChange={(event) => setImageModel(event.target.value)} className="field mt-1 font-normal" /></label><Button onClick={generateAiStory} disabled={generatingText || generatingImages || !apiKey.trim()} className="self-end">{generatingText ? 'Writing hooks + story…' : 'Generate AI hooks + story'}</Button><Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="md:col-span-2">{generatingImages ? 'Generating + composing…' : 'Generate finished slides: image + text'}</Button><p className="text-xs text-black/55 md:col-span-2">The key remains in memory for this tab and is sent only to OpenRouter. Images are generated without lettering, then the approved slide text is art-directed onto each final 1080 × 1920 PNG.</p></div>
+                <div className="mb-5 grid gap-3 rounded-xl border border-black/10 bg-white p-4 md:grid-cols-2"><label className="label">OpenRouter API key<input aria-label="OpenRouter API key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-…" autoComplete="off" className="field mt-1 font-normal" /></label><label className="label">Text model<input aria-label="Text model" value={textModel} onChange={(event) => setTextModel(event.target.value)} className="field mt-1 font-normal" /></label><label className="label">Image model<input aria-label="Image model" value={imageModel} onChange={(event) => setImageModel(event.target.value)} className="field mt-1 font-normal" /></label><Button onClick={generateAiStory} disabled={generatingText || generatingImages || !apiKey.trim()} className="self-end">{generatingText ? 'Writing hooks + story…' : 'Generate AI hooks + story'}</Button><p className="text-xs text-black/55 md:col-span-2">The key remains in memory for this tab and is sent only to OpenRouter. Images are generated without lettering, then the approved slide text is art-directed onto each final 1080 × 1920 PNG.</p></div>
                 <div className="mb-5 rounded-xl border border-black/10 bg-white p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3"><span className="label mb-0">Visual style preset</span><Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={() => recomposeOverlays()} disabled={generatingImages || generatingText || !slides.some((slide) => images[slide.id]?.dataUrl)}>Re-render overlays</Button></div>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="radiogroup" aria-label="Visual style preset">
+                  <div className="mb-3">
+                    <span className="label mb-0" id="image-style-title">Image generation style</span>
+                    <p className="text-xs text-black/55">Choose the photographic look before generating — it is written into every image prompt. This is separate from the slide design preset below, which only styles the text overlay.</p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="radiogroup" aria-labelledby="image-style-title" aria-label="Image generation style">
+                    {IMAGE_STYLES.map((style) => (
+                      <button key={style.id} role="radio" aria-checked={imageStyleId === style.id} onClick={() => changeImageStyle(style.id)} disabled={generatingImages || generatingText}
+                        className={cn('focus-ring rounded-lg border p-3 text-left transition-colors', imageStyleId === style.id ? 'border-cobalt bg-cobalt/5 ring-1 ring-cobalt' : 'border-black/15 hover:bg-black/5')}>
+                        <span aria-hidden="true" className="mb-2 block h-8 w-full rounded-md border border-black/10" style={{ background: `linear-gradient(120deg, ${style.swatch[0]} 0%, ${style.swatch[1]} 55%, ${style.swatch[2]} 100%)` }} />
+                        <p className="text-sm font-bold">{style.name}</p>
+                        <p className="mt-1 text-xs leading-5 text-black/55">{style.tagline}</p>
+                      </button>
+                    ))}
+                  </div>
+                  {imageStyleId === 'custom' && (
+                    <div className="mt-3">
+                      <label className="label" htmlFor="custom-style">Custom style direction</label>
+                      <textarea id="custom-style" className="field min-h-24 resize-y font-normal" value={customStyleText} onChange={(event) => setCustomStyleText(event.target.value)} placeholder={CUSTOM_STYLE_PLACEHOLDER} disabled={generatingImages} />
+                    </div>
+                  )}
+                  <Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="mt-4 w-full">{generatingImages ? 'Generating + composing…' : `Generate finished slides: image + text (${imageStyle.name})`}</Button>
+                  <p className="mt-3 text-xs text-black/55">Each style rewrites the subject treatment, environment, lighting, camera and lens, texture and grade, and composition of the prompt while preserving 9:16 framing and text-safe negative space. Switching styles after generating marks frames stale until they are regenerated.</p>
+                </div>
+                <div className="mb-5 rounded-xl border border-black/10 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3"><span className="label mb-0">Slide design preset</span><Button variant="secondary" className="min-h-9 px-3 text-xs" onClick={() => recomposeOverlays()} disabled={generatingImages || generatingText || !slides.some((slide) => images[slide.id]?.dataUrl)}>Re-render overlays</Button></div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="radiogroup" aria-label="Slide design preset">
                     {STYLE_PRESETS.map((preset) => (
                       <button key={preset.id} role="radio" aria-checked={stylePreset === preset.id} onClick={() => changePreset(preset.id)} disabled={generatingImages || generatingText}
                         className={cn('focus-ring rounded-lg border p-3 text-left transition-colors', stylePreset === preset.id ? 'border-cobalt bg-cobalt/5 ring-1 ring-cobalt' : 'border-black/15 hover:bg-black/5')}>
@@ -289,7 +330,7 @@ function App() {
                       </button>
                     ))}
                   </div>
-                  <p className="mt-3 text-xs text-black/55">Presets change typography, composition, and texture per narrative role — not just colors. Switching re-renders existing frames locally without spending image credits. Each slide gets one of seven compositions (impact stack, editorial split, evidence card, tension rail, spotlight reveal, takeaway ledger, CTA stamp) chosen from its narrative job, with no layout repeated back-to-back.</p>
+                  <p className="mt-3 text-xs text-black/55">Design presets change the text overlay: typography, composition, and texture per narrative role — independent of the image generation style above. Switching re-renders existing frames locally without spending image credits. Each slide gets one of seven compositions (impact stack, editorial split, evidence card, tension rail, spotlight reveal, takeaway ledger, CTA stamp) chosen from its narrative job, with no layout repeated back-to-back.</p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   {slides.map((slide) => <article key={slide.id} className="panel overflow-hidden">

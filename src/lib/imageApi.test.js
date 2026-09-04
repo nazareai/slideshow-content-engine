@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buildImagePrompt, buildVisualBible, generateImage, imageExtension, parseImageResponse } from './imageApi'
+import { IMAGE_STYLES, resolveImageStyle } from './imageStyles'
 
 describe('OpenRouter image generation', () => {
   it('builds a photographic 9:16 prompt without asking the model for text', () => {
@@ -59,5 +60,50 @@ describe('OpenRouter image generation', () => {
     expect(imageExtension('image/webp')).toBe('webp')
     expect(imageExtension('image/jpeg')).toBe('jpg')
     expect(imageExtension()).toBe('png')
+  })
+})
+
+describe('image style directives in prompts', () => {
+  const slide = { role: 'Hook', visual: 'A founder staring at a silent analytics dashboard at night' }
+  const project = { topic: 'content quality', audience: 'solo founders' }
+  const fixedStyles = IMAGE_STYLES.filter((style) => !style.editable)
+
+  it('embeds every selected style directive and yields materially different prompts per style', () => {
+    const prompts = fixedStyles.map((style) => buildImagePrompt(slide, project, undefined, style.id))
+    prompts.forEach((prompt, index) => {
+      expect(prompt, fixedStyles[index].id).toContain(resolveImageStyle(fixedStyles[index].id).directive)
+    })
+    expect(new Set(prompts).size).toBe(fixedStyles.length)
+  })
+
+  it('embeds the style in the visual bible so the whole series inherits it', () => {
+    for (const style of fixedStyles) {
+      const bible = buildVisualBible(project, style.id)
+      expect(bible).toContain(resolveImageStyle(style.id).directive)
+      expect(bible).toContain('consistent visual density and color grade')
+    }
+  })
+
+  it('preserves 9:16 framing, text-safe negative space, and the no-typography rule for every style', () => {
+    for (const style of IMAGE_STYLES) {
+      const prompt = buildImagePrompt(slide, project, undefined, { styleId: style.id, customText: 'neon grunge night market' })
+      expect(prompt, style.id).toContain('Aspect ratio 9:16')
+      expect(prompt, style.id).toContain('text-safe negative space')
+      expect(prompt, style.id).toContain('No typography')
+    }
+  })
+
+  it('routes the Custom style direction into the bible and every prompt', () => {
+    const selection = { styleId: 'custom', customText: 'wet-plate collodion portraits with scratched emulsion' }
+    const bible = buildVisualBible(project, selection)
+    expect(bible).toContain('wet-plate collodion portraits with scratched emulsion')
+    expect(buildImagePrompt(slide, project, bible, selection)).toContain('wet-plate collodion portraits with scratched emulsion')
+    expect(buildImagePrompt(slide, project, undefined, selection)).toContain('wet-plate collodion portraits with scratched emulsion')
+  })
+
+  it('defaults to Creator Candid instead of any generic professional look', () => {
+    const prompt = buildImagePrompt(slide, project)
+    expect(prompt).toContain('Creator Candid image style')
+    expect(prompt).not.toMatch(/professional/i)
   })
 })

@@ -1,29 +1,36 @@
+import { resolveImageStyle } from './imageStyles'
+
 const IMAGE_ENDPOINT = 'https://openrouter.ai/api/v1/images'
 export const DEFAULT_IMAGE_MODEL = 'meta/muse-image'
 
 const clean = (value) => String(value ?? '').trim()
 
-export function buildVisualBible(project = {}) {
+// The visual bible is the per-series continuity contract embedded in every
+// frame's prompt. The selected image style supplies the entire look — subject
+// treatment, environment, lighting, camera, texture, composition.
+export function buildVisualBible(project = {}, styleSelection) {
   const subject = clean(project.topic) || clean(project.title) || 'the story subject'
   const audience = clean(project.audience) || 'a broad social audience'
-  return `Series continuity: one grounded contemporary editorial photo essay about ${subject} for ${audience}; natural window light, muted charcoal and warm cream palette, 35mm documentary lens, realistic lived-in environments, candid human gestures, subtle film grain, consistent visual density and color grade across every frame.`
+  const style = resolveImageStyle(styleSelection)
+  return `Series continuity: one ${style.name}-styled vertical photo series about ${subject} for ${audience}. ${style.directive} Hold this exact treatment with consistent visual density and color grade across every frame.`
 }
 
-export function buildImagePrompt(slide, project = {}, visualBible = buildVisualBible(project)) {
+export function buildImagePrompt(slide, project = {}, visualBible, styleSelection) {
   const subject = clean(project.topic) || clean(project.title) || 'the story subject'
   const audience = clean(project.audience) || 'a broad social audience'
   const direction = clean(slide?.visual)
+  const bible = visualBible || buildVisualBible(project, styleSelection)
 
   return [
-    'Create one photorealistic vertical editorial photograph for a TikTok slideshow.',
+    'Create one photorealistic vertical photograph for a TikTok slideshow.',
     `Story subject: ${subject}.`,
     `Audience context: ${audience}.`,
     `Frame purpose: ${clean(slide?.role)}.`,
     `Scene direction: ${direction}.`,
-    visualBible,
-    'Aspect ratio 9:16, cinematic natural light, believable materials, candid documentary detail, strong single focal point, visual depth, room for a short text overlay in the upper-middle area.',
-    'Keep the same grounded contemporary editorial style a complete slideshow series could use.',
-    'No typography, captions, logos, watermarks, interface mockups, split screens, collages, abstract gradients, or generic stock-photo poses.',
+    bible,
+    'Aspect ratio 9:16, full-bleed vertical frame, one strong focal point, visual depth, and clear text-safe negative space left for a short text overlay in the upper-middle area.',
+    'Keep the exact same styled treatment a complete slideshow series could use.',
+    'No typography, captions, logos, watermarks, interface mockups, split screens, collages, or generic stock-photo poses.',
   ].join(' ')
 }
 
