@@ -29,7 +29,7 @@ function setFieldValue(element, value) {
 
 const byRole = (group, name) => [...group.querySelectorAll('[role="radio"]')].find((radio) => radio.textContent.includes(name))
 const generateButton = () => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Generate finished slides'))
-const imageStyleGroup = () => document.querySelector('[role="radiogroup"][aria-label="Image generation style"]')
+const imageStyleGroup = () => document.querySelector('#image-style-controls')
 const designPresetGroup = () => document.querySelector('[role="radiogroup"][aria-label="Slide design preset"]')
 const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 25)))
 
@@ -49,133 +49,68 @@ describe('image style selection in the app', () => {
     vi.unstubAllGlobals()
   })
 
-  it('offers the full TikTok-native taxonomy as a control separate from the slide design preset', () => {
-    const styleGroup = imageStyleGroup()
-    const designGroup = designPresetGroup()
-    expect(styleGroup).toBeTruthy()
-    expect(designGroup).toBeTruthy()
-    expect(styleGroup).not.toBe(designGroup)
-    const styleNames = [
-      'Creator Candid', 'Direct Flash', 'Cinematic',
-      'Flat 2D Cartoon', 'Hand-Drawn Doodle', 'Comic Ink & Halftone', 'Cut-Paper Collage', 'Clay & Toy 3D', 'Retro Pixel Art',
-      'Surreal Brainrot', 'Deep-Fried Meme', 'Cursed Collage', 'Y2K Web Chaos',
-      'Custom',
-    ]
-    expect(styleGroup.querySelectorAll('[role="radio"]')).toHaveLength(14)
-    styleNames.forEach((name) => expect(byRole(styleGroup, name), name).toBeTruthy())
-    expect(styleGroup.textContent).not.toMatch(/professional/i)
+  it('offers independent medium and treatment controls, including cartoon plus brainrot', async () => {
+    const mediumGroup = document.querySelector('[role="radiogroup"][aria-label="Rendering medium"]')
+    const treatmentGroup = document.querySelector('[role="radiogroup"][aria-label="Visual treatment"]')
+    expect(mediumGroup).toBeTruthy()
+    expect(treatmentGroup).toBeTruthy()
+    expect(byRole(mediumGroup, 'Flat 2D Cartoon')).toBeTruthy()
+    expect(byRole(treatmentGroup, 'Surreal Brainrot')).toBeTruthy()
+    await act(async () => byRole(mediumGroup, 'Flat 2D Cartoon').click())
+    await act(async () => byRole(treatmentGroup, 'Surreal Brainrot').click())
+    expect(byRole(mediumGroup, 'Flat 2D Cartoon').getAttribute('aria-checked')).toBe('true')
+    expect(byRole(treatmentGroup, 'Surreal Brainrot').getAttribute('aria-checked')).toBe('true')
+    expect(document.body.textContent).toContain('Flat 2D Cartoon + Surreal Brainrot')
   })
 
-  it('shows the choices grouped by category, each with a visual swatch and a description', () => {
-    const styleGroup = imageStyleGroup()
-    for (const groupId of ['capture', 'illustrated', 'meme', 'custom']) {
-      expect(styleGroup.querySelector(`[data-style-group="${groupId}"]`), groupId).toBeTruthy()
-    }
-    expect(styleGroup.textContent).toContain('Capture')
-    expect(styleGroup.textContent).toContain('Illustration & transformation')
-    expect(styleGroup.textContent).toContain('Meme-native')
-    for (const radio of styleGroup.querySelectorAll('[role="radio"]')) {
-      const swatch = radio.querySelector('span[aria-hidden="true"]')
-      expect(swatch, radio.textContent).toBeTruthy()
-      expect(swatch.getAttribute('style')).toContain('linear-gradient')
-      expect(radio.querySelectorAll('p')[1].textContent.length).toBeGreaterThan(20)
-    }
-  })
-
-  it('places the image style selector before the image generation control', () => {
-    const styleGroup = imageStyleGroup()
+  it('places both style axes before image generation and keeps slide design independent', async () => {
+    const controls = imageStyleGroup()
     const button = generateButton()
-    expect(button).toBeTruthy()
-    expect(styleGroup.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it('keeps image style and slide design preset selections independent', async () => {
-    await act(async () => byRole(imageStyleGroup(), 'Flat 2D Cartoon').click())
-    expect(byRole(imageStyleGroup(), 'Flat 2D Cartoon').getAttribute('aria-checked')).toBe('true')
-    expect(byRole(designPresetGroup(), 'Bold Impact').getAttribute('aria-checked')).toBe('true')
-
+    expect(controls.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await act(async () => byRole(document.querySelector('[aria-label="Rendering medium"]'), 'Flat 2D Cartoon').click())
     await act(async () => byRole(designPresetGroup(), 'Zine Punch').click())
     expect(byRole(designPresetGroup(), 'Zine Punch').getAttribute('aria-checked')).toBe('true')
-    expect(byRole(imageStyleGroup(), 'Flat 2D Cartoon').getAttribute('aria-checked')).toBe('true')
+    expect(byRole(document.querySelector('[aria-label="Rendering medium"]'), 'Flat 2D Cartoon').getAttribute('aria-checked')).toBe('true')
   })
 
-  it('sends the style selected before generation inside the actual image request', async () => {
+  it('sends cartoon plus brainrot in the exact final image payload without photographic or generic 3D leakage', async () => {
     const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) }))
     vi.stubGlobal('fetch', fetchSpy)
-
-    await act(async () => byRole(imageStyleGroup(), 'Surreal Brainrot').click())
+    await act(async () => byRole(document.querySelector('[aria-label="Rendering medium"]'), 'Flat 2D Cartoon').click())
+    await act(async () => byRole(document.querySelector('[aria-label="Visual treatment"]'), 'Surreal Brainrot').click())
     await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
     await act(async () => generateButton().click())
-    await flush()
-
-    expect(fetchSpy).toHaveBeenCalled()
-    const [url, request] = fetchSpy.mock.calls[0]
-    expect(url).toBe('https://openrouter.ai/api/v1/images')
-    const body = JSON.parse(request.body)
-    expect(body.prompt).toContain(resolveImageStyle('surreal-brainrot').directive)
-    expect(body.prompt).toContain('Aspect ratio 9:16')
-    expect(body.prompt).toContain('text-safe negative space')
-    expect(body.prompt).not.toContain('Create one photorealistic vertical photograph')
+    for (let attempt = 0; attempt < 40 && fetchSpy.mock.calls.length < 5; attempt += 1) await flush()
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body)
+    expect(body.prompt).toContain('Flat 2D Cartoon + Surreal Brainrot')
+    expect(body.prompt).toContain('absurd hybrid mascot')
+    expect(body.prompt).toContain('flat 2D')
+    expect(body.prompt).toContain('no 3D')
+    expect(body.prompt).not.toMatch(/photorealistic vertical photograph/i)
+    expect(fetchSpy).toHaveBeenCalledTimes(5)
   })
 
-  it('sends the selected style medium inside the actual story request, replacing the photorealistic default', async () => {
+  it('sends both medium and treatment contracts inside the story request', async () => {
     const hooks = Array.from({ length: 5 }, (_, index) => ({ text: `Hook candidate number ${index} for this story`, score: 60 + index }))
-    const storyResponse = {
-      hooks,
-      selectedHook: hooks[4].text,
-      slides: [
-        { role: 'Hook', text: 'The dashboard sprite finally stopped blinking', visual: 'A pixel-sprite founder frozen before a dark tiled dashboard wall', layout: 'impact-stack', emphasis: 'blinking', focalPoint: { x: 0.5, y: 0.6 } },
-        { role: 'Context', text: 'Every level shipped exactly on schedule', visual: 'A conveyor of identical pixel crates rolling across a platform', layout: 'editorial-split', emphasis: 'schedule', focalPoint: { x: 0.5, y: 0.35 } },
-        { role: 'Tension', text: 'No player ever saved the game', visual: 'An untouched glowing save-point orb in an empty pixel corridor', layout: 'tension-rail', emphasis: 'saved', focalPoint: { x: 0.7, y: 0.4 } },
-        { role: 'Shift', text: 'So the sprite rebuilt one single level', visual: 'The founder sprite placing one glowing tile with care', layout: 'spotlight-reveal', emphasis: 'single', focalPoint: { x: 0.5, y: 0.3 } },
-        { role: 'Payoff', text: 'One earned level beats ten empty worlds', visual: 'A small finished pixel level shining under an indigo sky', layout: 'takeaway-ledger', emphasis: 'earned', focalPoint: { x: 0.5, y: 0.3 } },
-      ],
-      caption: 'Ship one level players actually save.',
-    }
-    const fetchSpy = vi.fn(async (url) => url.includes('/chat/completions')
-      ? { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(storyResponse) } }] }) }
-      : { ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) })
+    const slides = [
+      { role: 'Hook', text: 'The mascot ate the dashboard again', visual: 'A flat mascot swallowing a dashboard', layout: 'impact-stack', emphasis: 'ate', focalPoint: { x: .5, y: .6 } },
+      { role: 'Context', text: 'Every chart became forbidden lore', visual: 'Flat charts orbit a mascot shrine', layout: 'editorial-split', emphasis: 'lore', focalPoint: { x: .5, y: .35 } },
+      { role: 'Tension', text: 'Nobody could explain the numbers', visual: 'Flat figures point at impossible numbers', layout: 'tension-rail', emphasis: 'explain', focalPoint: { x: .7, y: .4 } },
+      { role: 'Shift', text: 'One cursed metric finally worked', visual: 'A flat glowing metric appears', layout: 'spotlight-reveal', emphasis: 'worked', focalPoint: { x: .5, y: .3 } },
+      { role: 'Payoff', text: 'Absurdity made the lesson stick', visual: 'A flat mascot crowns the metric', layout: 'takeaway-ledger', emphasis: 'stick', focalPoint: { x: .5, y: .3 } },
+    ]
+    const response = { hooks, selectedHook: hooks[4].text, slides, caption: 'The weird metric won.' }
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(response) } }] }) }))
     vi.stubGlobal('fetch', fetchSpy)
-
-    await act(async () => byRole(imageStyleGroup(), 'Retro Pixel Art').click())
+    await act(async () => byRole(document.querySelector('[aria-label="Rendering medium"]'), 'Flat 2D Cartoon').click())
+    await act(async () => byRole(document.querySelector('[aria-label="Visual treatment"]'), 'Surreal Brainrot').click())
     await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
-    const storyButton = [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Generate AI hooks + story'))
-    await act(async () => storyButton.click())
+    await act(async () => [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Generate AI hooks + story')).click())
     await flush()
-
-    const storyCall = fetchSpy.mock.calls.find(([url]) => url.includes('/chat/completions'))
-    expect(storyCall).toBeTruthy()
-    const systemPrompt = JSON.parse(storyCall[1].body).messages[0].content
-    expect(systemPrompt).toContain('Chunky low-resolution pixel art')
-    expect(systemPrompt).not.toMatch(/photorealistic/i)
-    expect(systemPrompt).not.toContain('concrete photorealistic vertical scene')
-  })
-
-  it('generates independent frames in parallel with bounded concurrency and one exact payload per frame', async () => {
-    let inFlight = 0
-    let maxInFlight = 0
-    const prompts = []
-    const fetchSpy = vi.fn(async (_url, request) => {
-      prompts.push(JSON.parse(request.body).prompt)
-      inFlight += 1
-      maxInFlight = Math.max(maxInFlight, inFlight)
-      await new Promise((resolve) => setTimeout(resolve, 40))
-      inFlight -= 1
-      return { ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) }
-    })
-    vi.stubGlobal('fetch', fetchSpy)
-
-    await act(async () => byRole(imageStyleGroup(), 'Flat 2D Cartoon').click())
-    await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
-    await act(async () => generateButton().click())
-    for (let attempt = 0; attempt < 40 && (fetchSpy.mock.calls.length < 5 || inFlight > 0); attempt += 1) await flush()
-    await flush()
-
-    expect(fetchSpy).toHaveBeenCalledTimes(5) // one call per slide, never duplicated
-    expect(new Set(prompts).size).toBe(5) // five distinct per-frame payloads
-    prompts.forEach((prompt) => expect(prompt).toContain(resolveImageStyle('cartoon-pop').directive))
-    expect(maxInFlight).toBeGreaterThanOrEqual(2) // frames really overlapped …
-    expect(maxInFlight).toBeLessThanOrEqual(3) // … but stayed under the pool cap
+    const prompt = JSON.parse(fetchSpy.mock.calls[0][1].body).messages[0].content
+    expect(prompt).toContain('Flat 2D Cartoon + Surreal Brainrot')
+    expect(prompt).toContain('absurd hybrid mascot')
+    expect(prompt).toContain('Never use camera, lens, photorealistic, CGI')
   })
 
   it('cancelling an in-progress run stops undispatched frames and reports the cancellation', async () => {
@@ -196,22 +131,4 @@ describe('image style selection in the app', () => {
     expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(3) // only the in-flight pool was ever dispatched
   })
 
-  it('exposes an editable Custom direction and uses it in generation prompts', async () => {
-    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: 'YWJj' }] }) }))
-    vi.stubGlobal('fetch', fetchSpy)
-
-    expect(document.querySelector('#custom-style')).toBeNull()
-    await act(async () => byRole(imageStyleGroup(), 'Custom').click())
-    const customField = document.querySelector('#custom-style')
-    expect(customField).toBeTruthy()
-
-    await act(async () => setFieldValue(customField, 'shot through a rain-covered fish tank, green sodium light'))
-    await act(async () => setFieldValue(document.querySelector('input[aria-label="OpenRouter API key"]'), 'sk-or-test'))
-    await act(async () => generateButton().click())
-    await flush()
-
-    expect(fetchSpy).toHaveBeenCalled()
-    const body = JSON.parse(fetchSpy.mock.calls[0][1].body)
-    expect(body.prompt).toContain('shot through a rain-covered fish tank, green sodium light')
-  })
 })

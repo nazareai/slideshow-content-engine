@@ -267,6 +267,12 @@ export function storySceneBrief(selection = DEFAULT_IMAGE_STYLE_ID) {
   const style = resolveImageStyle(selection)
   const fixed = getImageStyle(style.id)
   const base = 'Every visual direction must describe one concrete vertical scene in the selected image medium, with clear negative space for a text overlay.'
+  if (style.mediumId) {
+    const authority = style.photographic
+      ? 'The selected medium is photographic, so describe physically plausible moments a camera could capture.'
+      : `The selected medium is non-photographic and authoritative. Never use camera, lens, photorealistic, CGI, or generic 3D vocabulary unless the medium itself explicitly requires 3D. Hard medium constraints: ${style.negative}`
+    return `${base} Selected combination: ${style.name}. ${style.directive} ${authority}`
+  }
   if (fixed.editable) {
     return `${base} ${style.directive} This custom direction is authoritative: describe every scene in its medium and vocabulary alone, and only use real-camera photography language if the direction itself asks for it.`
   }
@@ -281,7 +287,61 @@ export function storySceneBrief(selection = DEFAULT_IMAGE_STYLE_ID) {
 // Normalize any selection shape ({ styleId, customText }, a resolved style, or
 // a bare id string) into the object the app state, prompts, and export
 // manifest share. Idempotent: resolveImageStyle(resolveImageStyle(x)) is x.
+export const IMAGE_MEDIA = Object.freeze([
+  Object.freeze({ id: 'photo-candid', name: 'Photo · Creator Candid', sourceStyleId: 'creator-candid', photographic: true }),
+  Object.freeze({ id: 'photo-flash', name: 'Photo · Direct Flash', sourceStyleId: 'direct-flash', photographic: true }),
+  Object.freeze({ id: 'photo-cinematic', name: 'Photo · Cinematic', sourceStyleId: 'cinematic', photographic: true }),
+  Object.freeze({ id: 'flat-2d', name: 'Flat 2D Cartoon', sourceStyleId: 'cartoon-pop', photographic: false }),
+  Object.freeze({ id: 'doodle', name: 'Hand-Drawn Doodle', sourceStyleId: 'hand-doodle', photographic: false }),
+  Object.freeze({ id: 'comic', name: 'Comic Ink & Halftone', sourceStyleId: 'comic-ink', photographic: false }),
+  Object.freeze({ id: 'paper', name: 'Cut-Paper Collage', sourceStyleId: 'paper-collage', photographic: false }),
+  Object.freeze({ id: 'pixel', name: 'Retro Pixel Art', sourceStyleId: 'retro-pixel', photographic: false }),
+  Object.freeze({ id: 'clay-3d', name: 'Clay & Toy 3D', sourceStyleId: 'clay-toy-3d', photographic: false }),
+])
+
+export const IMAGE_TREATMENTS = Object.freeze([
+  Object.freeze({ id: 'clean', name: 'Clean', directive: 'Treatment: clean and intentional. Keep the medium legible and the story subject direct; add no meme damage or internet-chaos effects.' }),
+  Object.freeze({ id: 'brainrot', name: 'Surreal Brainrot', directive: 'Treatment: surreal brainrot. Turn the subject into an absurd hybrid mascot with impossible pseudo-lore, wildly wrong scale, deadpan epic staging, shrine-like props, fake livestream UI fragments, and screenshot-of-a-screenshot energy. Apply all of this using only the selected rendering medium.' }),
+  Object.freeze({ id: 'deep-fried', name: 'Deep-Fried', directive: 'Treatment: deep-fried meme. Push saturation, contrast, edge halos, compression blocks, repost damage, and reaction-image intensity while preserving the selected rendering medium.' }),
+  Object.freeze({ id: 'cursed', name: 'Cursed', directive: 'Treatment: cursed and deliberately wrong. Use mismatched scale, contradictory shadows, awkward duplication, hard seams, and confident visual incoherence, all rendered natively in the selected medium.' }),
+  Object.freeze({ id: 'y2k-chaos', name: 'Y2K Chaos', directive: 'Treatment: Y2K web chaos. Add chrome ornaments, sparkle bursts, gel-button shapes, cursor trails, checkerboard horizons, and candy cyber colors, translated into the selected rendering medium rather than replacing it.' }),
+])
+
+export const DEFAULT_IMAGE_MEDIUM_ID = 'photo-candid'
+export const DEFAULT_IMAGE_TREATMENT_ID = 'clean'
+
+export function getImageMedium(id) {
+  return IMAGE_MEDIA.find((medium) => medium.id === clean(id)) || IMAGE_MEDIA.find((medium) => medium.id === DEFAULT_IMAGE_MEDIUM_ID)
+}
+
+export function getImageTreatment(id) {
+  return IMAGE_TREATMENTS.find((treatment) => treatment.id === clean(id)) || IMAGE_TREATMENTS.find((treatment) => treatment.id === DEFAULT_IMAGE_TREATMENT_ID)
+}
+
+// New selections have two orthogonal axes. The rendering medium is authoritative:
+// treatments may alter subject grammar and internet texture, but cannot replace
+// flat drawing with photography or generic 3D. Bare legacy style ids remain
+// supported for saved projects and older callers.
 export function resolveImageStyle(selection = DEFAULT_IMAGE_STYLE_ID) {
+  if (typeof selection === 'object' && selection?.mediumId) {
+    const medium = getImageMedium(selection.mediumId)
+    const treatment = getImageTreatment(selection.treatmentId)
+    const source = getImageStyle(medium.sourceStyleId)
+    const mediumDirective = styleDirective(source)
+    const directive = `${mediumDirective} ${treatment.directive} Medium authority: ${source.directive.negative}`
+    return {
+      id: `${medium.id}+${treatment.id}`,
+      mediumId: medium.id,
+      treatmentId: treatment.id,
+      name: treatment.id === 'clean' ? medium.name : `${medium.name} + ${treatment.name}`,
+      group: 'composed',
+      custom: '',
+      photographic: medium.photographic,
+      negative: source.directive.negative,
+      directive,
+    }
+  }
+
   const styleId = typeof selection === 'string' ? selection : selection?.styleId ?? selection?.id
   const style = getImageStyle(styleId)
   const custom = typeof selection === 'object' ? clean(selection?.customText ?? selection?.custom) : ''
@@ -290,6 +350,8 @@ export function resolveImageStyle(selection = DEFAULT_IMAGE_STYLE_ID) {
     name: style.name,
     group: style.group,
     custom: style.editable ? custom : '',
+    photographic: style.group === 'capture',
+    negative: style.directive?.negative || '',
     directive: styleDirective(style, custom),
   }
 }

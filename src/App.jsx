@@ -7,7 +7,7 @@ import { computeExportReadiness, ensureZipFilename, isRenderCurrent, makeSlides,
 import { DEFAULT_IMAGE_MODEL, generateSlideImages, IMAGE_GENERATION_CONCURRENCY, planImagePrompts } from './lib/imageApi'
 import { composeContactSheet, composeSlideDataUrl, loadImage } from './lib/compositor'
 import { DEFAULT_PRESET_ID, getPreset, STYLE_PRESETS } from './lib/artDirection'
-import { CUSTOM_STYLE_PLACEHOLDER, DEFAULT_IMAGE_STYLE_ID, getImageStyle, IMAGE_STYLE_GROUPS, resolveImageStyle, stylesInGroup } from './lib/imageStyles'
+import { DEFAULT_IMAGE_MEDIUM_ID, DEFAULT_IMAGE_TREATMENT_ID, getImageMedium, getImageTreatment, IMAGE_MEDIA, IMAGE_TREATMENTS, resolveImageStyle } from './lib/imageStyles'
 import { DEFAULT_TEXT_MODEL, generateStory } from './lib/textApi'
 
 const starterIdeas = [
@@ -49,12 +49,12 @@ function App() {
   const [generatingText, setGeneratingText] = useState(false)
   const [generatingImages, setGeneratingImages] = useState(false)
   const [stylePreset, setStylePreset] = useState(DEFAULT_PRESET_ID)
-  const [imageStyleId, setImageStyleId] = useState(DEFAULT_IMAGE_STYLE_ID)
-  const [customStyleText, setCustomStyleText] = useState('')
+  const [imageMediumId, setImageMediumId] = useState(DEFAULT_IMAGE_MEDIUM_ID)
+  const [imageTreatmentId, setImageTreatmentId] = useState(DEFAULT_IMAGE_TREATMENT_ID)
   const [images, setImages] = useState({})
   const [reviewedSlides, setReviewedSlides] = useState({})
   const imageAbortRef = useRef(null)
-  const imageStyle = useMemo(() => resolveImageStyle({ styleId: imageStyleId, customText: customStyleText }), [imageStyleId, customStyleText])
+  const imageStyle = useMemo(() => resolveImageStyle({ mediumId: imageMediumId, treatmentId: imageTreatmentId }), [imageMediumId, imageTreatmentId])
   const briefKey = JSON.stringify({ topic, audience, angle, observation, source, slideCount })
   const [generatedBriefKey, setGeneratedBriefKey] = useState(briefKey)
   const stale = briefKey !== generatedBriefKey
@@ -149,17 +149,19 @@ function App() {
     recomposeOverlays(presetId)
   }
 
-  // Image style is chosen before generation. Unlike the slide design preset it
-  // shapes the generated photograph itself, so switching after generating only
-  // marks frames stale — it never silently spends image credits.
-  function changeImageStyle(styleId) {
-    if (styleId === imageStyleId) return
-    setImageStyleId(styleId)
+  // Medium and treatment are independent. Either change invalidates existing
+  // renders and approvals because both contracts are embedded in provider prompts.
+  function changeImageLook(kind, id) {
+    const currentId = kind === 'medium' ? imageMediumId : imageTreatmentId
+    if (id === currentId) return
+    if (kind === 'medium') setImageMediumId(id)
+    else setImageTreatmentId(id)
+    setReviewedSlides({})
     const hasFrames = slides.some((slide) => images[slide.id]?.dataUrl)
-    const name = getImageStyle(styleId).name
+    const name = kind === 'medium' ? getImageMedium(id).name : getImageTreatment(id).name
     setNotice(hasFrames
-      ? `Image style set to ${name}. Existing frames and visual directions keep the previous style — regenerate the AI story and images to apply it. Export stays blocked until every frame matches the selected style.`
-      : `Image style set to ${name}. It will shape the story's visual directions and every image prompt when you generate.`)
+      ? `${kind === 'medium' ? 'Medium' : 'Treatment'} set to ${name}. Existing frames are stale. Regenerate the AI story and images before export.`
+      : `${kind === 'medium' ? 'Medium' : 'Treatment'} set to ${name}. It will combine with the other style layer in story and image generation.`)
   }
 
   // Store one finished frame (raw provider result + locally composed overlay)
@@ -360,32 +362,31 @@ function App() {
                     <span className="label mb-0" id="image-style-title">Image generation style</span>
                     <p className="text-xs text-black/55">Choose the visual world before generating — it is written into the story's visual directions and every image prompt. This is separate from the slide design preset below, which only styles the text overlay.</p>
                   </div>
-                  <div role="radiogroup" aria-labelledby="image-style-title" aria-label="Image generation style">
-                    {IMAGE_STYLE_GROUPS.map((group) => (
-                      <div key={group.id} className="mb-4 last:mb-0" data-style-group={group.id}>
-                        <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
-                          <p className="text-xs font-bold uppercase tracking-wide text-black/70">{group.name}</p>
-                          <p className="text-xs text-black/45">{group.blurb}</p>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                          {stylesInGroup(group.id).map((style) => (
-                            <button key={style.id} role="radio" aria-checked={imageStyleId === style.id} onClick={() => changeImageStyle(style.id)} disabled={generatingImages || generatingText}
-                              className={cn('focus-ring rounded-lg border p-3 text-left transition-colors', imageStyleId === style.id ? 'border-cobalt bg-cobalt/5 ring-1 ring-cobalt' : 'border-black/15 hover:bg-black/5')}>
-                              <span aria-hidden="true" className="mb-2 block h-8 w-full rounded-md border border-black/10" style={{ background: `linear-gradient(120deg, ${style.swatch[0]} 0%, ${style.swatch[1]} 55%, ${style.swatch[2]} 100%)` }} />
-                              <p className="text-sm font-bold">{style.name}</p>
-                              <p className="mt-1 text-xs leading-5 text-black/55">{style.tagline}</p>
-                            </button>
-                          ))}
-                        </div>
+                  <div id="image-style-controls" className="grid gap-4 lg:grid-cols-2">
+                    <div role="radiogroup" aria-label="Rendering medium">
+                      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-black/70">1 · Rendering medium</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {IMAGE_MEDIA.map((medium) => (
+                          <button key={medium.id} role="radio" aria-checked={imageMediumId === medium.id} onClick={() => changeImageLook('medium', medium.id)} disabled={generatingImages || generatingText}
+                            className={cn('focus-ring rounded-lg border p-3 text-left transition-colors', imageMediumId === medium.id ? 'border-cobalt bg-cobalt/5 ring-1 ring-cobalt' : 'border-black/15 hover:bg-black/5')}>
+                            <p className="text-sm font-bold">{medium.name}</p>
+                          </button>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  {imageStyleId === 'custom' && (
-                    <div className="mt-3">
-                      <label className="label" htmlFor="custom-style">Custom style direction</label>
-                      <textarea id="custom-style" className="field min-h-24 resize-y font-normal" value={customStyleText} onChange={(event) => setCustomStyleText(event.target.value)} placeholder={CUSTOM_STYLE_PLACEHOLDER} disabled={generatingImages} />
                     </div>
-                  )}
+                    <div role="radiogroup" aria-label="Visual treatment">
+                      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-black/70">2 · Treatment</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {IMAGE_TREATMENTS.map((treatment) => (
+                          <button key={treatment.id} role="radio" aria-checked={imageTreatmentId === treatment.id} onClick={() => changeImageLook('treatment', treatment.id)} disabled={generatingImages || generatingText}
+                            className={cn('focus-ring rounded-lg border p-3 text-left transition-colors', imageTreatmentId === treatment.id ? 'border-cobalt bg-cobalt/5 ring-1 ring-cobalt' : 'border-black/15 hover:bg-black/5')}>
+                            <p className="text-sm font-bold">{treatment.name}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-3 rounded-lg bg-black/5 px-3 py-2 text-sm"><strong>Combined look:</strong> {imageStyle.name}</p>
                   <div className="mt-4 flex gap-2">
                     <Button onClick={generateImages} disabled={generatingImages || generatingText || !apiKey.trim()} className="flex-1">{generatingImages ? `Generating up to ${IMAGE_GENERATION_CONCURRENCY} frames at once…` : `Generate finished slides: image + text (${imageStyle.name})`}</Button>
                     {generatingImages && <Button variant="secondary" onClick={cancelImageGeneration}>Cancel</Button>}

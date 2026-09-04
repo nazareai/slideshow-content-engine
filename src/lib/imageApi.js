@@ -31,7 +31,7 @@ export function buildImagePrompt(slide, project = {}, visualBible, styleSelectio
   const direction = clean(slide?.visual)
   const style = resolveImageStyle(styleSelection)
   const bible = visualBible || buildVisualBible(project, style)
-  const negative = getImageStyle(style.id)?.directive?.negative || ''
+  const negative = style.negative || getImageStyle(style.id)?.directive?.negative || ''
 
   return [
     'Create one full-bleed vertical frame for a TikTok slideshow.',

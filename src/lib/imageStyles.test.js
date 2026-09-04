@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { LAYOUT_IDS, STYLE_PRESETS, getPreset } from './artDirection'
 import {
   CUSTOM_STYLE_PLACEHOLDER, DEFAULT_IMAGE_STYLE_ID, IMAGE_STYLE_FIELDS, IMAGE_STYLE_GROUPS,
-  IMAGE_STYLE_IDS, IMAGE_STYLES, getImageStyle, resolveImageStyle, styleDirective, stylesInGroup,
+  IMAGE_STYLE_IDS, IMAGE_STYLES, getImageStyle, resolveImageStyle, storySceneBrief, styleDirective, stylesInGroup,
 } from './imageStyles'
 
 const fixedStyles = IMAGE_STYLES.filter((style) => !style.editable)
@@ -18,6 +18,16 @@ describe('TikTok-native image style taxonomy', () => {
     ])
     expect(IMAGE_STYLES.some((style) => /professional/i.test(style.name))).toBe(false)
     expect(IMAGE_STYLES.filter((style) => style.editable)).toHaveLength(1)
+  })
+
+  it('composes Flat 2D Cartoon with Surreal Brainrot while keeping the medium authoritative', () => {
+    const style = resolveImageStyle({ mediumId: 'flat-2d', treatmentId: 'brainrot' })
+    expect(style.name).toBe('Flat 2D Cartoon + Surreal Brainrot')
+    expect(style.directive).toContain('completely flat 2D')
+    expect(style.directive).toContain('absurd hybrid mascot')
+    expect(style.directive).toContain('no 3D')
+    expect(style.directive).toContain('no photorealism')
+    expect(storySceneBrief({ mediumId: 'flat-2d', treatmentId: 'brainrot' })).toContain('Never use camera, lens, photorealistic, CGI')
   })
 
   it('organizes styles into the researched groups: Capture, Illustration/Transformation, Meme-native', () => {
